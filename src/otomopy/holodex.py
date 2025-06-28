@@ -132,9 +132,7 @@ class HolodexAPI:
     async def get_all_channels(self, limit: int = 100) -> list[dict[str, Any]]:
         """Get all VTuber channels from Holodex.
 
-        This method fetches VTuber channels from Holodex API, prioritizing the most
-        important/popular agencies and using rate limiting to avoid 429 errors.
-
+        This method fetches VTuber channels from Holodex API.
         Args:
             limit: Maximum number of channels to return per request
 
@@ -334,6 +332,7 @@ class HolodexManager:
         self.running = False
         self.update_interval = 60  # seconds
         self.api_key = api_key
+        self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
 
         # WebSocket connection
         self.ws = None
@@ -367,6 +366,7 @@ class HolodexManager:
         self.running = True
         self.stream_callback = stream_callback
         self.chat_callback = chat_callback
+        self.tracked_channels = tracked_channels
 
         # Load channel cache or fetch channels if cache is invalid
         await self._initialize_channel_cache()
@@ -379,7 +379,7 @@ class HolodexManager:
         await asyncio.sleep(2)
 
         # Create task for stream updates
-        stream_task = asyncio.create_task(self._stream_update_loop(tracked_channels))
+        stream_task = asyncio.create_task(self._stream_update_loop())
 
         # Wait for the tasks to complete (or be cancelled)
         await asyncio.gather(stream_task, self.ws_task, return_exceptions=True)
@@ -473,15 +473,64 @@ class HolodexManager:
         # Close the API HTTP client
         await self.api.close()
 
-    async def _stream_update_loop(self, tracked_channels: set[str]):
-        """Run the stream update loop.
+    async def update_channels(self, new_channels: set[str]):
+        """Update the set of YouTube channels being tracked.
 
         Args:
-            tracked_channels: Set of YouTube channel IDs to track
+            new_channels: New set of YouTube channel IDs to track
         """
+        old_channels = self.tracked_channels.copy()
+        self.tracked_channels = new_channels
+
+        # Log the change
+        added_channels = new_channels - old_channels
+        removed_channels = old_channels - new_channels
+
+        if added_channels:
+            logger.info(f"Added {len(added_channels)} new channels to track")
+            # Immediately update streams to pick up content from new channels
+            if self.running:
+                logger.info("Triggering immediate stream update for new channels")
+                try:
+                    await self._update_streams(self.tracked_channels)
+                except Exception as e:
+                    logger.error(f"Error during immediate stream update: {e}")
+
+        if removed_channels:
+            logger.info(f"Removed {len(removed_channels)} channels from tracking")
+            # Immediately clean up streams from removed channels
+            self._cleanup_removed_channels(removed_channels)
+
+        logger.info(f"Now tracking {len(self.tracked_channels)} total channels")
+
+    def _cleanup_removed_channels(self, removed_channels: set[str]):
+        """Clean up streams from channels that are no longer being tracked.
+
+        Args:
+            removed_channels: Set of channel IDs that were removed from tracking
+        """
+        # Find streams that belong to removed channels
+        streams_to_remove = []
+        for video_id, stream in self.current_streams.items():
+            if stream.channel_id in removed_channels:
+                streams_to_remove.append(video_id)
+                logger.info(f"Cleaning up stream from removed channel: {stream.channel_name} - {stream.title}")
+
+        # Remove streams from current_streams and schedule unsubscription
+        for video_id in streams_to_remove:
+            if video_id in self.current_streams:
+                del self.current_streams[video_id]
+
+            # Schedule unsubscription from chat if we're subscribed
+            if video_id in self.active_subscriptions and self.running:
+                # Create a task to unsubscribe from chat
+                asyncio.create_task(self._unsubscribe_from_chat(video_id))
+
+    async def _stream_update_loop(self):
+        """Run the stream update loop."""
         while self.running:
             try:
-                await self._update_streams(tracked_channels)
+                await self._update_streams(self.tracked_channels)
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
                 logger.error(f"Error in stream update loop: {e}")

@@ -97,7 +97,7 @@ class DiscordBot(discord.Client):
         await self.tree.sync()  # For global commands
 
         # Start tracking Holodex channels
-        self.update_tracked_channels()
+        await self.update_tracked_channels()
         self.holodex_task = asyncio.create_task(self.start_holodex_tracking())
         self.holodex_chat_messages_received = 0
 
@@ -131,9 +131,14 @@ class DiscordBot(discord.Client):
 
         return False
 
-    def update_tracked_channels(self):
+    async def update_tracked_channels(self):
         """Update the set of YouTube channels being tracked."""
-        self.tracked_channels = self.config.get_all_youtube_channels()
+        tracked_channels = self.config.get_all_youtube_channels()
+        if tracked_channels != self.tracked_channels:
+            # Pass new set of channels to the HolodexManager
+            await self.holodex_manager.update_channels(tracked_channels)
+
+        self.tracked_channels = tracked_channels
         logger.info(f"Now tracking {len(self.tracked_channels)} YouTube channels")
 
     async def start_holodex_tracking(self):

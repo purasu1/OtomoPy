@@ -158,7 +158,7 @@ def register_commands(bot):
 
         if success:
             # Update the set of tracked channels
-            bot.update_tracked_channels()
+            await bot.update_tracked_channels()
             embed.description = "✅ Successfully added relay for this YouTube channel!"
         else:
             embed.description = "ℹ️ This YouTube channel is already being relayed to this Discord channel."
@@ -223,7 +223,7 @@ def register_commands(bot):
 
         if success:
             # Update the set of tracked channels
-            bot.update_tracked_channels()
+            await bot.update_tracked_channels()
             if channel_info and channel_info.get("photo"):
                 embed.set_thumbnail(url=channel_info.get("photo"))
 
