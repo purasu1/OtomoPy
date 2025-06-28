@@ -114,15 +114,15 @@ Remove a translator from the blacklist for the current guild.
 #### `/list_blacklisted`
 Show all blacklisted translators for the current guild.
 
-### `/add_admin_role <role_id>`
+#### `/add_admin_role <role_id>`
 Add an admin role to the current guild.
 - Requires admin privileges
 
-### `/remove_admin_role <role_id>`
+#### `/remove_admin_role <role_id>`
 Remove an admin role from the current guild.
 - Requires admin privileges
 
-### `/shutdown`
+#### `/shutdown`
 Shut down the bot.
 - Requires owner privileges
 
