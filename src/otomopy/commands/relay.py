@@ -10,8 +10,6 @@ from typing import List
 import discord
 from discord import app_commands
 
-from otomopy.permissions import Privilege, require_privilege
-
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +100,7 @@ def register_commands(bot):
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to relay")
     @app_commands.autocomplete(channel_id=channel_autocomplete)
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_add(interaction: discord.Interaction, channel_id: str):
         """Add a YouTube channel to relay in the current Discord channel.
 
@@ -171,7 +169,7 @@ def register_commands(bot):
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to stop relaying")
     @app_commands.autocomplete(channel_id=channel_autocomplete)
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_remove(interaction: discord.Interaction, channel_id: str):
         """Remove a YouTube channel relay from the current Discord channel.
 
@@ -233,7 +231,7 @@ def register_commands(bot):
         name="relays",
         description="List all YouTube channel relays for this Discord channel",
     )
-    @require_privilege(Privilege.REGULAR)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_list(interaction: discord.Interaction):
         """List all YouTube channel relays for the current Discord channel.
 

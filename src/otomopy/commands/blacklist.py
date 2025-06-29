@@ -11,8 +11,6 @@ import re
 import discord
 from discord import app_commands
 
-from otomopy.permissions import Privilege, require_privilege
-
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +23,7 @@ def register_commands(bot):
 
     # Context menu command for right-clicking on messages
     @bot.tree.context_menu(name="Blacklist Translator")
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def blacklist_translator_context(
         interaction: discord.Interaction, message: discord.Message
     ):
@@ -93,7 +91,7 @@ def register_commands(bot):
     @app_commands.describe(
         username="The YouTube username of the translator to blacklist (e.g., @vtange)"
     )
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def blacklist_translator_slash(
         interaction: discord.Interaction, username: str
     ):
@@ -165,7 +163,7 @@ def register_commands(bot):
         username="The YouTube username of the translator to remove from blacklist"
     )
     @app_commands.autocomplete(username=unblacklist_autocomplete)
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def unblacklist_translator(interaction: discord.Interaction, username: str):
         """Remove a translator from the blacklist.
 
@@ -202,7 +200,7 @@ def register_commands(bot):
         name="list_blacklisted",
         description="List all blacklisted translators for this server",
     )
-    @require_privilege(Privilege.ADMIN)
+    @discord.app_commands.default_permissions(manage_messages=True)
     async def list_blacklisted(interaction: discord.Interaction):
         """List all blacklisted translators for this guild.
 
