@@ -90,41 +90,27 @@ otomopy
 
 ### Slash Commands
 
+By default, all slash commands require manage messages permissions. This can be adjusted on a per-guild basis in the server integration settings.
+
 #### `/relay <channel_id>`
 Add a YouTube channel to monitor for the current Discord channel.
 - Auto-completes channel names
-- Requires guild admin privileges
 
 #### `/unrelay <channel_id>`
 Remove a YouTube channel from monitoring for the current Discord channel.
 - Auto-completes channel names
-- Requires admin privileges
 
 #### `/relays`
 List all configured channel relays for the current Discord channel.
 
 #### `/blacklist_translator <username>`
 Add a translator to the blacklist for the current guild.
-- Requires admin privileges
 
 #### `/unblacklist_translator <username>`
 Remove a translator from the blacklist for the current guild.
-- Requires admin privileges
 
 #### `/list_blacklisted`
 Show all blacklisted translators for the current guild.
-
-#### `/add_admin_role <role_id>`
-Add an admin role to the current guild.
-- Requires admin privileges
-
-#### `/remove_admin_role <role_id>`
-Remove an admin role from the current guild.
-- Requires admin privileges
-
-#### `/shutdown`
-Shut down the bot.
-- Requires owner privileges
 
 ## How It Works
 
