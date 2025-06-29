@@ -247,16 +247,11 @@ class GuildConfig:
             guild_config["tl_blacklist"] = []
 
         # Check if user is already blacklisted
-        for entry in guild_config["tl_blacklist"]:
-            if entry.get("user_name") == user_name:
-                return False  # Already blacklisted
+        if user_name in guild_config["tl_blacklist"]:
+            return False  # Already blacklisted
 
         # Add user to blacklist
-        blacklist_entry = {
-            "user_name": user_name,
-            "added_at": str(int(__import__("time").time())),  # Unix timestamp
-        }
-        guild_config["tl_blacklist"].append(blacklist_entry)
+        guild_config["tl_blacklist"].append(user_name)
         self.save()
         return True
 
@@ -276,13 +271,13 @@ class GuildConfig:
             return False
 
         # Find and remove the user
-        for i, entry in enumerate(guild_config["tl_blacklist"]):
-            if entry.get("user_name") == user_name:
-                guild_config["tl_blacklist"].pop(i)
-                self.save()
-                return True
-
-        return False
+        try:
+            guild_config["tl_blacklist"].remove(user_name)
+        except ValueError:
+            return False
+        finally:
+            self.save()
+            return True
 
     def is_user_blacklisted(self, guild_id: int, user_name: str) -> bool:
         """Check if a user is blacklisted for translations in a guild.
@@ -297,7 +292,7 @@ class GuildConfig:
         guild_config = self.get_guild_config(guild_id)
         blacklist = guild_config.get("tl_blacklist", [])
 
-        return any(entry.get("user_name") == user_name for entry in blacklist)
+        return user_name in blacklist
 
     def get_blacklisted_users(self, guild_id: int) -> list:
         """Get all blacklisted users for a guild.

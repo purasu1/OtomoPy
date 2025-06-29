@@ -330,7 +330,7 @@ class HolodexManager:
             set()
         )  # Set of message IDs we've already processed
         self.running = False
-        self.update_interval = 60  # seconds
+        self.update_interval = 300  # seconds
         self.api_key = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
 

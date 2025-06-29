@@ -65,7 +65,7 @@ def register_commands(bot):
 
         # Add to blacklist
         success = bot.config.add_blacklisted_user(
-            interaction.guild.id, translator_name, translator_name
+            interaction.guild.id, translator_name
         )
 
         if success:
@@ -117,7 +117,7 @@ def register_commands(bot):
 
         # Add to blacklist
         success = bot.config.add_blacklisted_user(
-            interaction.guild.id, username, username
+            interaction.guild.id, username
         )
 
         if success:
@@ -146,10 +146,11 @@ def register_commands(bot):
         blacklisted_users = bot.config.get_blacklisted_users(interaction.guild.id)
         choices = []
 
-        for entry in blacklisted_users:
-            user_name = entry.get("user_name", "Unknown")
+        for user_name in blacklisted_users:
             if current.lower() in user_name.lower():
                 choices.append(app_commands.Choice(name=user_name, value=user_name))
+                if len(choices) >= 25:
+                    break
 
         # Return up to 25 choices (Discord limit)
         return choices[:25]
@@ -224,23 +225,8 @@ def register_commands(bot):
 
         # Format the blacklist
         blacklist_lines = []
-        for i, entry in enumerate(blacklisted_users, 1):
-            user_name = entry.get("user_name", "Unknown")
-            added_at = entry.get("added_at", "Unknown")
-
-            # Convert timestamp to readable date if it's a number
-            try:
-                import datetime
-
-                timestamp = int(added_at)
-                date_str = datetime.datetime.fromtimestamp(timestamp).strftime(
-                    "%Y-%m-%d"
-                )
-                blacklist_lines.append(
-                    f"{i}. **{user_name}** - Added: {date_str}"
-                )
-            except (ValueError, TypeError):
-                blacklist_lines.append(f"{i}. **{user_name}**")
+        for i, user_name in enumerate(blacklisted_users, 1):
+            blacklist_lines.append(f"{i}. `{user_name}`")
 
         # Split into multiple messages if too long
         message_content = "**Blacklisted Translators:**\n" + "\n".join(blacklist_lines)
