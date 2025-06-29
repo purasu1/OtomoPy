@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 import aiohttp
@@ -305,6 +306,9 @@ class HolodexManager:
         """
         self.api = HolodexAPI(api_key)
         self.current_streams: dict[str, StreamEvent] = {}  # video_id -> StreamEvent
+        self.future_streams: dict[str, StreamEvent] = (
+            {}
+        )  # video_id -> StreamEvent for streams >24h away
         self.active_subscriptions: set[str] = (
             set()
         )  # Set of video_ids currently subscribed to
@@ -360,8 +364,13 @@ class HolodexManager:
         # Create task for stream updates
         stream_task = asyncio.create_task(self._stream_update_loop())
 
+        # Create task for processing future streams
+        future_streams_task = asyncio.create_task(self._future_streams_loop())
+
         # Wait for the tasks to complete (or be cancelled)
-        await asyncio.gather(stream_task, self.ws_task, return_exceptions=True)
+        await asyncio.gather(
+            stream_task, future_streams_task, self.ws_task, return_exceptions=True
+        )
 
     async def _initialize_channel_cache(self):
         """Initialize the channel cache.
@@ -529,6 +538,17 @@ class HolodexManager:
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
                 logger.error(f"Error in stream update loop: {e}")
+                await asyncio.sleep(5)  # Short delay before retry on error
+
+    async def _future_streams_loop(self):
+        """Run the future streams processing loop to check cached streams periodically."""
+        while self.running:
+            try:
+                await self._process_future_streams()
+                # Check future streams more frequently (every 5 minutes)
+                await asyncio.sleep(300)
+            except Exception as e:
+                logger.error(f"Error in future streams loop: {e}")
                 await asyncio.sleep(5)  # Short delay before retry on error
 
     async def _establish_websocket_session(self):
@@ -829,6 +849,66 @@ class HolodexManager:
             logger.error(f"Error processing WebSocket message: {e}")
             logger.exception("Full exception details:")
 
+    def _is_stream_more_than_24h_away(self, event: StreamEvent) -> bool:
+        """Check if a stream is more than 24 hours in the future.
+
+        Args:
+            event: StreamEvent to check
+
+        Returns:
+            True if stream starts more than 24 hours from now
+        """
+        if not event.start_time:
+            return False
+
+        try:
+            # Parse the ISO format datetime string
+            start_time = datetime.fromisoformat(event.start_time.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+
+            # Check if more than 24 hours away
+            return start_time > now + timedelta(hours=24)
+        except (ValueError, AttributeError) as e:
+            logger.warning(
+                f"Could not parse start_time '{event.start_time}' for stream {event.video_id}: {e}"
+            )
+            return False
+
+    async def _process_future_streams(self):
+        """Check cached future streams and process those that are now <= 24 hours away."""
+        streams_to_process = []
+
+        for video_id, event in list(self.future_streams.items()):
+            if not self._is_stream_more_than_24h_away(event):
+                streams_to_process.append((video_id, event))
+
+        for video_id, event in streams_to_process:
+            logger.info(
+                f"Processing future stream now within 24h: {event.channel_name} - {event.title}"
+            )
+
+            # Remove from future streams
+            del self.future_streams[video_id]
+
+            # Add to current streams
+            self.current_streams[video_id] = event
+
+            # Call the callback
+            await self.stream_callback(event)
+
+            # Subscribe to chat if appropriate
+            if (
+                event.status in ["live", "upcoming"]
+                and video_id not in self.active_subscriptions
+            ):
+                logger.info(f"Subscribing to chat for future stream: {event.video_id}")
+                if self.ws_connected:
+                    await self._subscribe_to_chat(video_id)
+                else:
+                    logger.warning(
+                        f"WebSocket not connected, will retry subscription for {video_id} later"
+                    )
+
     async def _update_streams(self, tracked_channels: set[str]):
         """Update the current streams and detect changes.
 
@@ -849,6 +929,17 @@ class HolodexManager:
         current_streams = {}
         for item in live_data:
             event = StreamEvent.from_api_response(item)
+
+            # Check if this is a future stream (>24h away)
+            if event.status == "upcoming" and self._is_stream_more_than_24h_away(event):
+                # Cache it for later processing
+                if event.video_id not in self.future_streams:
+                    logger.info(
+                        f"Caching future stream (>24h): {event.channel_name} - {event.title} - starts {event.start_time}"
+                    )
+                    self.future_streams[event.video_id] = event
+                continue
+
             current_streams[event.video_id] = event
             logger.debug(
                 f"Found stream: {event.channel_name} - {event.title} - {event.status} - {event.video_id}"
@@ -891,10 +982,22 @@ class HolodexManager:
                 if video_id in self.active_subscriptions:
                     await self._unsubscribe_from_chat(video_id)
 
+        # Clean up future streams that are no longer upcoming or have been moved to current
+        streams_to_remove = []
+        for video_id in self.future_streams:
+            # Check if this stream is in the current API response
+            found_in_api = any(item["id"] == video_id for item in live_data)
+            if not found_in_api:
+                streams_to_remove.append(video_id)
+
+        for video_id in streams_to_remove:
+            logger.info(f"Removing future stream that's no longer in API: {video_id}")
+            del self.future_streams[video_id]
+
         # Update our stored state
         self.current_streams = current_streams
         logger.debug(
-            f"Updated stream state: {len(current_streams)} current streams, {len(self.active_subscriptions)} active subscriptions"
+            f"Updated stream state: {len(current_streams)} current streams, {len(self.future_streams)} future streams, {len(self.active_subscriptions)} active subscriptions"
         )
 
     async def _subscribe_to_chat(self, video_id: str):
