@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -187,12 +186,8 @@ class HolodexAPI:
 
                         all_channels.extend(channels)
 
-                        # If we got fewer channels than the limit, we've reached the end
-                        if len(channels) < limit:
-                            break
-
                         # Move to the next page
-                        offset += limit
+                        offset += len(channels)
                     elif response.status == 429:
                         logger.warning(
                             "Rate limited while fetching channels for All Vtubers, waiting longer"
@@ -257,14 +252,15 @@ class ChatMessage:
 
     video_id: str
     channel_id: str
-    message: str
     author: str
-    timestamp: str
-    is_translation: bool
-    translation_author: str | None
-    message_id: str
-    source_language: str | None
-    target_language: str | None
+    timestamp: int
+    video_offset: float
+    message: str
+    is_tl: bool
+    is_moderator: bool
+    is_vtuber: bool
+    is_verified: bool
+    source: str
 
     @classmethod
     def from_socket_message(
@@ -280,34 +276,20 @@ class ChatMessage:
         Returns:
             ChatMessage object
         """
-        # Holodex already filters messages, so we assume all messages are relevant
-        is_translation = (
-            True  # Assume all messages from Holodex are translations or from vtubers
-        )
-        translation_author = data.get("name", "Unknown")
-        source_language = data.get("source_lang")
-        target_language = data.get("target_lang")
-        message_id = (
-            data.get("channel_id", "")
-            or f"{data.get('name', '')}-{data.get('timestamp', '')}"
-        )
 
         # Clean up the message - remove URLs
-        message = data.get("message", "")
-        if isinstance(message, str):
-            message = re.sub(r":https?://\S+", ":", message)
-
         return cls(
             video_id=video_id,
             channel_id=channel_id,
-            message=message,
             author=data.get("name", "Unknown"),
-            timestamp=str(data.get("timestamp", "")),
-            is_translation=is_translation,
-            translation_author=translation_author,
-            message_id=message_id,
-            source_language=source_language,
-            target_language=target_language,
+            timestamp=data.get("timestamp", 0),
+            video_offset=data.get("video_offset", 0.0),
+            message=data.get("message", ""),
+            is_tl=data.get("is_tl", False),
+            is_moderator=data.get("is_moderator", False),
+            is_vtuber=data.get("is_vtuber", False),
+            is_verified=data.get("is_verified", False),
+            source=data.get("source", ""),
         )
 
 
@@ -326,9 +308,6 @@ class HolodexManager:
         self.active_subscriptions: set[str] = (
             set()
         )  # Set of video_ids currently subscribed to
-        self.processed_message_ids: set[str] = (
-            set()
-        )  # Set of message IDs we've already processed
         self.running = False
         self.update_interval = 300  # seconds
         self.api_key = api_key
@@ -416,12 +395,26 @@ class HolodexManager:
         if new_channels:
             # Filter new channels to only include useful ones
             filtered_channels = []
-            channel_keys = ["id", "name", "english_name", "org", "photo", "type", "suborg"]
+            channel_keys = [
+                "id",
+                "name",
+                "english_name",
+                "org",
+                "photo",
+                "type",
+                "suborg",
+            ]
             for channel in new_channels:
                 # Only include active channels with both name and ID
-                if channel.get("id") and channel.get("name") and not channel.get("inactive", False):
+                if (
+                    channel.get("id")
+                    and channel.get("name")
+                    and not channel.get("inactive", False)
+                ):
                     # Create simplified channel object with additional info
-                    filtered_channels.append({key: channel.get(key, "") for key in channel_keys})
+                    filtered_channels.append(
+                        {key: channel.get(key, "") for key in channel_keys}
+                    )
 
             # Update the cache with filtered channels
             if filtered_channels:
@@ -514,7 +507,9 @@ class HolodexManager:
         for video_id, stream in self.current_streams.items():
             if stream.channel_id in removed_channels:
                 streams_to_remove.append(video_id)
-                logger.info(f"Cleaning up stream from removed channel: {stream.channel_name} - {stream.title}")
+                logger.info(
+                    f"Cleaning up stream from removed channel: {stream.channel_name} - {stream.title}"
+                )
 
         # Remove streams from current_streams and schedule unsubscription
         for video_id in streams_to_remove:
@@ -653,7 +648,9 @@ class HolodexManager:
                                 break
 
                             self.ws_connected = True
-                            retry_delay = 1  # Reset retry delay on successful connection
+                            retry_delay = (
+                                1  # Reset retry delay on successful connection
+                            )
 
                             # Re-subscribe to all active streams
                             await self._resubscribe_to_streams()
@@ -703,7 +700,7 @@ class HolodexManager:
             # Clean up session
             self.ws_connected = False
             if self.ws_session and not self.ws_session.closed:
-                await self.ws_session.close()
+                await self.ws_session.close()  # pyright: ignore
                 self.ws_session = None
 
     async def _handle_socketio_protocol_message(self, message: str) -> bool:
@@ -765,7 +762,7 @@ class HolodexManager:
             chat_message = ChatMessage.from_socket_message(
                 video_id, event_data, channel_id
             )
-            await self._handle_chat_message(chat_message)
+            await self.chat_callback(chat_message)
         elif event_data.get("type") == "end":
             # Chat ended for this video
             logger.info(f"Chat ended for video {video_id}")
@@ -831,23 +828,6 @@ class HolodexManager:
         except Exception as e:
             logger.error(f"Error processing WebSocket message: {e}")
             logger.exception("Full exception details:")
-
-    async def _handle_chat_message(self, chat_message: ChatMessage):
-        """Handle a chat message."""
-        # Skip messages we've already processed
-        if chat_message.message_id in self.processed_message_ids:
-            return
-
-        # Mark this message as processed
-        self.processed_message_ids.add(chat_message.message_id)
-
-        # Call the chat callback
-        await self.chat_callback(chat_message)
-
-        # Limit the size of the processed message IDs set to prevent memory issues
-        if len(self.processed_message_ids) > 10000:
-            # Only keep the 5000 most recent message IDs
-            self.processed_message_ids = set(list(self.processed_message_ids)[-5000:])
 
     async def _update_streams(self, tracked_channels: set[str]):
         """Update the current streams and detect changes.

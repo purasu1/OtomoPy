@@ -57,57 +57,6 @@ class GuildConfig:
             self.save()
         return self.data[guild_id_str]
 
-    def add_admin_role(self, guild_id: int, role_id: int) -> bool:
-        """Add a role to the admin roles list for a guild.
-
-        Args:
-            guild_id: The Discord guild ID
-            role_id: The Discord role ID to add
-
-        Returns:
-            bool: True if the role was added, False if it was already an admin role
-        """
-        guild_config = self.get_guild_config(guild_id)
-        role_id_str = str(role_id)
-        if role_id_str not in guild_config.get("admin_roles", []):
-            if "admin_roles" not in guild_config:
-                guild_config["admin_roles"] = []
-            guild_config["admin_roles"].append(role_id_str)
-            self.save()
-            return True
-        return False
-
-    def remove_admin_role(self, guild_id: int, role_id: int) -> bool:
-        """Remove a role from the admin roles list for a guild.
-
-        Args:
-            guild_id: The Discord guild ID
-            role_id: The Discord role ID to remove
-
-        Returns:
-            bool: True if the role was removed, False if it wasn't an admin role
-        """
-        guild_config = self.get_guild_config(guild_id)
-        role_id_str = str(role_id)
-        if "admin_roles" in guild_config and role_id_str in guild_config["admin_roles"]:
-            guild_config["admin_roles"].remove(role_id_str)
-            self.save()
-            return True
-        return False
-
-    def is_admin_role(self, guild_id: int, role_id: int) -> bool:
-        """Check if a role is an admin role for a guild.
-
-        Args:
-            guild_id: The Discord guild ID
-            role_id: The Discord role ID to check
-
-        Returns:
-            bool: True if the role is an admin role, False otherwise
-        """
-        guild_config = self.get_guild_config(guild_id)
-        return str(role_id) in guild_config.get("admin_roles", [])
-
     def add_relay_channel(
         self, guild_id: int, discord_channel_id: int, youtube_channel_id: str
     ) -> bool:
@@ -229,7 +178,9 @@ class GuildConfig:
         return all_channels
 
     def add_blacklisted_user(
-        self, guild_id: int, user_name: str,
+        self,
+        guild_id: int,
+        user_name: str,
     ) -> bool:
         """Add a user to the translation blacklist for a guild.
 

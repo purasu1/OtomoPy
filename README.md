@@ -10,6 +10,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - **Channel Management**: Add/remove YouTube channels to monitor per Discord server
 - **Translation Blacklist**: Filter out specific translators or chat messages
 - **Multi-Server Support**: Configure different settings for each Discord server
+- **DeepL Translation**: Automatic DeepL translation of VTuber messages
 
 ## Requirements
 
@@ -17,6 +18,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - Discord Bot Token
 - Holodex API Key
 - Discord server with appropriate permissions
+- Optionally, a DeepL API key
 
 ## Installation
 
@@ -33,10 +35,13 @@ pip install -e .
 
 3. Create a `.env` file in the project root with the following variables:
 ```env
+# Required:
 DISCORD_TOKEN=your_discord_bot_token_here
 OWNER_ID=your_discord_user_id_here
 CONFIG_FILE=config.json
 HOLODEX_API_KEY=your_holodex_api_key_here
+# Optional:
+DEEPL_API_KEY=your_deepl_api_key_here
 ```
 
 ## Configuration

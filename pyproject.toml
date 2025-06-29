@@ -11,5 +11,10 @@ description = "Holodex relay bot for Discord"
 license = "MIT"
 license-files = ["LICENSE"]
 
+[project.optional-dependencies]
+deepl = [
+    "deepl >= 1.22.0",
+]
+
 [project.scripts]
 otomopy = "otomopy.bot:main"

@@ -64,9 +64,7 @@ def register_commands(bot):
             return
 
         # Add to blacklist
-        success = bot.config.add_blacklisted_user(
-            interaction.guild.id, translator_name
-        )
+        success = bot.config.add_blacklisted_user(interaction.guild.id, translator_name)
 
         if success:
             await interaction.response.send_message(
@@ -116,9 +114,7 @@ def register_commands(bot):
             return
 
         # Add to blacklist
-        success = bot.config.add_blacklisted_user(
-            interaction.guild.id, username
-        )
+        success = bot.config.add_blacklisted_user(interaction.guild.id, username)
 
         if success:
             await interaction.response.send_message(

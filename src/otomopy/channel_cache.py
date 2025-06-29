@@ -37,9 +37,24 @@ class ChannelCache:
         os.makedirs(self.cache_dir, exist_ok=True)
 
         self.cache_file = self.cache_dir / "holodex_channels_cache.json"
-        self.channels: list[dict[str, Any]] = []
+        self.channels = []
         self.last_update: float = 0
         self.cache_ttl: int = 24 * 60 * 60  # Cache TTL in seconds (24 hours)
+
+    @property
+    def channels(self) -> list[dict[str, Any]]:
+        """Get the list of channels from the cache.
+
+        Returns:
+            list[dict[str, Any]]: List of channels
+        """
+        return self._channels
+
+    @channels.setter
+    def channels(self, value: list[dict[str, Any]]) -> None:
+        self._channels = value
+        self._channel_by_name = {channel["name"]: channel for channel in value}
+        self._channel_by_id = {channel["id"]: channel for channel in value}
 
     def is_cache_valid(self) -> bool:
         """Check if the cache is valid and not expired.
@@ -142,11 +157,18 @@ class ChannelCache:
         Returns:
             Channel data or None if not found
         """
-        for channel in self.channels:
-            if channel.get("id") == channel_id:
-                return channel
+        return self._channel_by_id.get(channel_id)
 
-        return None
+    def get_channel_by_name(self, channel_name: str) -> dict[str, Any] | None:
+        """Get a specific channel by its name.
+
+        Args:
+            channel_name: YouTube channel name
+
+        Returns:
+            Channel data or None if not found
+        """
+        return self._channel_by_name.get(channel_name)
 
     def search_channels(self, query: str) -> list[dict[str, Any]]:
         """Search for channels in the cache by name.

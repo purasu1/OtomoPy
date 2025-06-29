@@ -30,6 +30,7 @@ class DotEnvConfig:
     owner_id: int
     config_file: str
     holodex_api_key: str
+    deepl_api_key: str | None
 
     @classmethod
     def load_env(cls) -> DotEnvConfig:
@@ -62,7 +63,9 @@ class DotEnvConfig:
                 "No Holodex API key found. Please add HOLODEX_API_KEY to your .env file"
             )
 
-        return cls(token, owner_id, config_file, holodex_api_key)
+        deepl_api_key = os.getenv("DEEPL_API_KEY")
+
+        return cls(token, owner_id, config_file, holodex_api_key, deepl_api_key)
 
 
 class DiscordBot(discord.Client):
@@ -88,6 +91,18 @@ class DiscordBot(discord.Client):
         self.holodex_manager = HolodexManager(dotenv.holodex_api_key, config_dir)
         self.tracked_channels: set[str] = set()
         self.holodex_task = None
+
+        # DeepL integration
+        self.deepl = None
+        if dotenv.deepl_api_key:
+            try:
+                from deepl import DeepLClient  # pyright: ignore
+            except ImportError:
+                logger.warning(
+                    "DeepL API key provided, but deepl package is not installed. Disabling translation."
+                )
+            else:
+                self.deepl = DeepLClient(dotenv.deepl_api_key)
 
     async def setup_hook(self):
         """Set up the bot and synchronize commands."""
@@ -129,57 +144,53 @@ class DiscordBot(discord.Client):
             f"Stream event: {event.channel_name} - {event.title} - {event.status}"
         )
 
+        embed = await self._format_stream_event(event)
+
         # Find all Discord channels this should be relayed to
         for guild_id_str, guild_config in self.config.data.items():
             relay_channels = guild_config.get("relay_channels", {})
 
             # If this YouTube channel is being relayed in this guild
             if event.channel_id in relay_channels:
-                discord_channel_ids = relay_channels[event.channel_id]
+                for discord_channel_id_str in relay_channels[event.channel_id]:
+                    # Get the Discord channel
+                    channel = self.get_channel(int(discord_channel_id_str))                    # Send the embed to the Discord channel
+                    if isinstance(channel, discord.TextChannel):
+                        await channel.send(embed=embed)
 
-                for discord_channel_id_str in discord_channel_ids:
-                    try:
-                        # Get the Discord channel
-                        channel = self.get_channel(int(discord_channel_id_str))
-                        if not channel:
-                            continue
 
-                        # Create an embed for the event
-                        embed = discord.Embed(
-                            title=event.title,
-                            url=f"https://www.youtube.com/watch?v={event.video_id}",
-                            color=self._get_status_color(event.status),
-                        )
+    async def _format_stream_event(self, event: StreamEvent) -> discord.Embed:
+        # Create an embed for the event
+        embed = discord.Embed(
+            title=event.title,
+            url=f"https://www.youtube.com/watch?v={event.video_id}",
+            color=self._get_status_color(event.status),
+        )
 
-                        embed.set_author(name=event.channel_name)
-                        embed.set_thumbnail(url=event.thumbnail)
+        embed.set_author(name=event.channel_name)
+        embed.set_thumbnail(url=event.thumbnail)
 
-                        if event.status == "live":
-                            embed.description = ":red_circle: **LIVE NOW**"
-                            if event.live_viewers:
-                                embed.add_field(
-                                    name="Viewers", value=f"{event.live_viewers:,}"
-                                )
-                        elif event.status == "upcoming":
-                            embed.description = ":soon: **UPCOMING**"
-                            if event.start_time:
-                                # Handle the timestamp
-                                try:
-                                    dt = datetime.fromisoformat(
-                                        event.start_time.replace("Z", "+00:00")
-                                    )
-                                    timestamp = int(dt.timestamp())
-                                    embed.add_field(
-                                        name="Scheduled for", value=f"<t:{timestamp}:F>"
-                                    )
-                                except Exception as e:
-                                    logger.error(f"Error formatting timestamp: {e}")
-
-                        # Send the embed to the Discord channel
-                        if isinstance(channel, discord.TextChannel):
-                            await channel.send(embed=embed)
-                    except Exception as e:
-                        logger.error(f"Error sending relay message: {e}")
+        if event.status == "live":
+            embed.description = ":red_circle: **LIVE NOW**"
+            if event.live_viewers:
+                embed.add_field(
+                    name="Viewers", value=f"{event.live_viewers:,}"
+                )
+        elif event.status == "upcoming":
+            embed.description = ":soon: **UPCOMING**"
+            if event.start_time:
+                # Handle the timestamp
+                try:
+                    dt = datetime.fromisoformat(
+                        event.start_time.replace("Z", "+00:00")
+                    )
+                    timestamp = int(dt.timestamp())
+                    embed.add_field(
+                        name="Scheduled for", value=f"<t:{timestamp}:F>"
+                    )
+                except Exception as e:
+                    logger.error(f"Error formatting timestamp: {e}")
+        return embed
 
     async def on_chat_message(self, message: ChatMessage):
         """Handle a chat message event from Holodex.
@@ -190,12 +201,16 @@ class DiscordBot(discord.Client):
         # Count messages received
         self.holodex_chat_messages_received += 1
 
+        # Only process messages from translators or vtubers
+        if not message.is_tl or message.is_vtuber:
+            return
+
         # Add debug logging for every message
         logger.debug(
             f"Received chat message #{self.holodex_chat_messages_received}: {message.author} - {message.message}"
         )
         logger.debug(
-            f"Message details - Channel: {message.channel_id}, Video: {message.video_id}, Is Translation: {message.is_translation}"
+            f"Message details - Channel: {message.channel_id}, Video: {message.video_id}"
         )
 
         # Log every 10th message to avoid flooding logs at INFO level
@@ -204,71 +219,98 @@ class DiscordBot(discord.Client):
                 f"Chat messages received: {self.holodex_chat_messages_received}, Latest: {message.author} - {message.message}"
             )
 
-        # Holodex already filters messages, so we relay all messages we receive
+        # If the message author is a vtuber, see if we can find their channel ID
+        message_author_channel_id = None
+        if message.is_vtuber:
+            message_author_channel = self.holodex_manager.channel_cache.get_channel_by_name(message.author)
+            if message_author_channel is not None:
+                message_author_channel_id = message_author_channel.get("id")
+
+        formatted_message = await self._format_message(message)
 
         # Find all Discord channels this should be relayed to
         for guild_id_str, guild_config in self.config.data.items():
+            # Check if the message author is blacklisted in this guild
+            # Use translator name directly without any modifications
+            guild_id = int(guild_id_str)
+            if self.config.is_user_blacklisted(guild_id, message.author):
+                logger.debug(
+                    f"Skipping message from blacklisted user {message.author} in guild {guild_id}"
+                )
+                continue
+
+            # Get all channels on this guild to relay the message to
             relay_channels = guild_config.get("relay_channels", {})
+            discord_channels = set(relay_channels.get(message.channel_id, []))
+            if message_author_channel_id is not None:
+                discord_channels.update(
+                    set(relay_channels.get(message_author_channel_id, []))
+                )
 
-            # If this YouTube channel is being relayed in this guild
-            if message.channel_id in relay_channels:
-                # Check if the message author is blacklisted in this guild
-                # Use translator name directly without any modifications
-                guild_id = int(guild_id_str)
-                if self.config.is_user_blacklisted(guild_id, message.author):
+            for discord_channel_id_str in discord_channels:
+                try:
+                    # Get the Discord channel
+                    channel = self.get_channel(int(discord_channel_id_str))
+                    if not channel or not isinstance(channel, discord.TextChannel):
+                        continue
+
+                    # Send the message to the Discord channel
+                    await channel.send(formatted_message)
+                except Exception:
+                    logger.exception("Error sending chat message:")
+
+    async def _format_message(
+        self,
+        message: ChatMessage,
+    ) -> str:
+        translation = None
+        if self.deepl and message.is_vtuber:
+            try:
+                result = self.deepl.translate_text(message.message, target_lang="EN-GB")
+                # Don't return the translation if the source language is already English
+                if result.detected_source_lang != "EN":
+                    translation = result.text
+                    logger.debug(f"Translated message: {translation}")
+                else:
                     logger.debug(
-                        f"Skipping message from blacklisted user {message.author} in guild {guild_id}"
+                        "Didn't translate message. Source language is already English"
                     )
-                    continue
+            except Exception:
+                logger.exception("Failed to translate message:")
 
-                discord_channel_ids = relay_channels[message.channel_id]
+        # Clean up message text by replacing backticks
+        clean_message = message.message.replace("`", "''")
 
-                for discord_channel_id_str in discord_channel_ids:
-                    try:
-                        # Get the Discord channel
-                        channel = self.get_channel(int(discord_channel_id_str))
-                        if not channel or not isinstance(channel, discord.TextChannel):
-                            continue
+        if message.is_vtuber:
+            # Display vtuber names clearly
+            author_display = f"**{message.author}:**"
+        else:
+            # Use spoiler tags for translator name
+            author_display = f"||{message.author}:||"
 
-                        # Format message like PomuBot - simple text with emojis
-                        # Clean up message text by replacing backticks
-                        clean_message = message.message.replace("`", "''")
+        # Build the message content
+        # TODO: match message author org with custom emotes
+        content_parts = [f":speech_balloon: {author_display} `{clean_message}`"]
 
-                        # Use spoiler tags for translator name (like PomuBot)
-                        author_display = f"||{message.author}:||"
+        # Add chat source link
+        video_url = f"https://www.youtube.com/watch?v={message.video_id}"
 
-                        # Build the message content
-                        content_parts = [
-                            f":speech_balloon: {author_display} `{clean_message}`"
-                        ]
+        # Get channel name from current streams if available
+        channel_name = "YouTube Chat"
+        if message.video_id in self.holodex_manager.current_streams:
+            stream_event = self.holodex_manager.current_streams[message.video_id]
+            channel_name = stream_event.channel_name
 
-                        # Add chat source link
-                        video_url = (
-                            f"https://www.youtube.com/watch?v={message.video_id}"
-                        )
+        if channel_name != message.author:
+            content_parts.append(f"**Chat:** [{channel_name}](<{video_url}>)")
 
-                        # Get channel name from current streams if available
-                        channel_name = "YouTube Chat"
-                        if (
-                            hasattr(self, "holodex_manager")
-                            and message.video_id in self.holodex_manager.current_streams
-                        ):
-                            stream_event = self.holodex_manager.current_streams[
-                                message.video_id
-                            ]
-                            channel_name = stream_event.channel_name
+        if translation is not None:
+            clean_translation = translation.replace("`", "''")
+            # TODO: add custom DeepL emote
+            content_parts.append(f"**DeepL:** `{clean_translation}`")
 
-                        content_parts.append(
-                            f"**Chat:** [{channel_name}](<{video_url}>)"
-                        )
-
-                        # Join all parts with newlines
-                        content = "\n".join(content_parts)
-
-                        # Send the message to the Discord channel
-                        await channel.send(content)
-                    except Exception as e:
-                        logger.error(f"Error sending chat message: {e}")
+        # Join all parts with newlines
+        return "\n".join(content_parts)
 
     def _get_status_color(self, status: str) -> discord.Color:
         """Get the embed color for a stream status.

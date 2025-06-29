@@ -8,7 +8,6 @@ only accessible to the bot owner.
 import logging
 
 import discord
-from discord import app_commands
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +18,7 @@ def register_commands(bot):
     Args:
         bot: The DiscordBot instance
     """
+
     @bot.tree.command(name="status", description="Get bot status information")
     @discord.app_commands.default_permissions(manage_messages=True)
     async def status(interaction: discord.Interaction):

@@ -59,7 +59,9 @@ def register_commands(bot):
         for channel in cached_channels:
             channel_name = channel.get("name", "").lower()
             channel_english_name = channel.get("english_name")
-            channel_english_name = "" if not channel_english_name else channel_english_name.lower()
+            channel_english_name = (
+                "" if not channel_english_name else channel_english_name.lower()
+            )
 
             # Check if query is in either name
             if query in channel_name or query in channel_english_name:
