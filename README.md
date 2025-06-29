@@ -9,7 +9,6 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - **Chat Relay**: Relays live chat messages from YouTube streams to Discord channels
 - **Channel Management**: Add/remove YouTube channels to monitor per Discord server
 - **Translation Blacklist**: Filter out specific translators or chat messages
-- **Permission System**: Role-based access control for bot commands
 - **Multi-Server Support**: Configure different settings for each Discord server
 
 ## Requirements
@@ -127,12 +126,10 @@ OtomoPy/
 │   ├── bot.py              # Main bot client and event handlers
 │   ├── holodex.py          # Holodex API integration
 │   ├── config.py           # Configuration management
-│   ├── permissions.py      # Role-based permission system
 │   ├── channel_cache.py    # YouTube channel caching
 │   └── commands/           # Slash command implementations
 │       ├── relay.py        # Channel relay commands
 │       ├── blacklist.py    # Translator blacklist commands
-│       ├── admin.py        # Administrative commands
 │       └── system.py       # System/utility commands
 ├── config.json             # Server configuration
 ├── pyproject.toml          # Project dependencies and metadata
