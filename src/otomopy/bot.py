@@ -154,10 +154,11 @@ class DiscordBot(discord.Client):
             if event.channel_id in relay_channels:
                 for discord_channel_id_str in relay_channels[event.channel_id]:
                     # Get the Discord channel
-                    channel = self.get_channel(int(discord_channel_id_str))                    # Send the embed to the Discord channel
+                    channel = self.get_channel(
+                        int(discord_channel_id_str)
+                    )  # Send the embed to the Discord channel
                     if isinstance(channel, discord.TextChannel):
                         await channel.send(embed=embed)
-
 
     async def _format_stream_event(self, event: StreamEvent) -> discord.Embed:
         # Create an embed for the event
@@ -173,21 +174,15 @@ class DiscordBot(discord.Client):
         if event.status == "live":
             embed.description = ":red_circle: **LIVE NOW**"
             if event.live_viewers:
-                embed.add_field(
-                    name="Viewers", value=f"{event.live_viewers:,}"
-                )
+                embed.add_field(name="Viewers", value=f"{event.live_viewers:,}")
         elif event.status == "upcoming":
             embed.description = ":soon: **UPCOMING**"
             if event.start_time:
                 # Handle the timestamp
                 try:
-                    dt = datetime.fromisoformat(
-                        event.start_time.replace("Z", "+00:00")
-                    )
+                    dt = datetime.fromisoformat(event.start_time.replace("Z", "+00:00"))
                     timestamp = int(dt.timestamp())
-                    embed.add_field(
-                        name="Scheduled for", value=f"<t:{timestamp}:F>"
-                    )
+                    embed.add_field(name="Scheduled for", value=f"<t:{timestamp}:F>")
                 except Exception as e:
                     logger.error(f"Error formatting timestamp: {e}")
         return embed
@@ -222,7 +217,9 @@ class DiscordBot(discord.Client):
         # If the message author is a vtuber, see if we can find their channel ID
         message_author_channel_id = None
         if message.is_vtuber:
-            message_author_channel = self.holodex_manager.channel_cache.get_channel_by_name(message.author)
+            message_author_channel = (
+                self.holodex_manager.channel_cache.get_channel_by_name(message.author)
+            )
             if message_author_channel is not None:
                 message_author_channel_id = message_author_channel.get("id")
 
