@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 
 from otomopy.config import GuildConfig
 from otomopy.holodex import ChatMessage, HolodexManager, StreamEvent
-from otomopy.permissions import ensure_permission_checked
 
 # Set up logging
 logging.basicConfig(
@@ -100,36 +99,6 @@ class DiscordBot(discord.Client):
         await self.update_tracked_channels()
         self.holodex_task = asyncio.create_task(self.start_holodex_tracking())
         self.holodex_chat_messages_received = 0
-
-    def has_permission(self, interaction: discord.Interaction) -> bool:
-        """Check if a user has permission to use admin commands.
-
-        Args:
-            interaction: The Discord interaction to check permissions for
-
-        Returns:
-            bool: True if the user has permission, False otherwise
-        """
-        # Owner always has permission
-        if interaction.user.id == self.dotenv.owner_id:
-            return True
-
-        # Check if user has any admin roles
-        if (
-            interaction.guild
-            and isinstance(interaction.user, discord.Member)
-            and interaction.user.guild_permissions.administrator
-        ):
-            return True
-
-        # Check if user has any configured admin roles
-        if interaction.guild and isinstance(interaction.user, discord.Member):
-            guild_config = self.config.get_guild_config(interaction.guild.id)
-            admin_roles = guild_config.get("admin_roles", [])
-            user_role_ids = [str(role.id) for role in interaction.user.roles]
-            return any(role_id in admin_roles for role_id in user_role_ids)
-
-        return False
 
     async def update_tracked_channels(self):
         """Update the set of YouTube channels being tracked."""
@@ -332,18 +301,12 @@ def main():
         logger.info(f"Owner ID: {dotenv.owner_id}")
 
     # Import commands here to avoid circular imports
-    from otomopy.commands import admin, blacklist, relay, system
+    from otomopy.commands import blacklist, relay, system
 
     # Register commands with permission checking enforcement
-    register_admin = ensure_permission_checked()(admin.register_commands)
-    register_blacklist = ensure_permission_checked()(blacklist.register_commands)
-    register_relay = ensure_permission_checked()(relay.register_commands)
-    register_system = ensure_permission_checked()(system.register_commands)
-
-    register_admin(bot)
-    register_blacklist(bot)
-    register_relay(bot)
-    register_system(bot)
+    blacklist.register_commands(bot)
+    relay.register_commands(bot)
+    system.register_commands(bot)
 
     # Run the bot
     logger.info("Starting bot...")
