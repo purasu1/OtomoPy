@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -22,6 +23,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+SCRUB_EMOTES = re.compile(r":([^:]+):https://[^\s]+")
 
 
 @dataclass
@@ -261,13 +264,18 @@ class DiscordBot(discord.Client):
         self,
         message: ChatMessage,
     ) -> str:
+        # Clean up message text by replacing backticks and stripping emote URLs
+        clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
+
         translation = None
         if self.deepl and message.is_vtuber:
             try:
-                result = self.deepl.translate_text(message.message, target_lang="EN-GB")
+                result = self.deepl.translate_text(clean_message, target_lang="EN-GB")
                 # Don't return the translation if the source language is already English
                 if result.detected_source_lang != "EN":
-                    translation = result.text
+                    # If any backticks happened to get re-inserted by DeepL, remove
+                    # them again.
+                    translation = result.text.replace("`", "''")
                     logger.debug(f"Translated message: {translation}")
                 else:
                     logger.debug(
@@ -275,9 +283,6 @@ class DiscordBot(discord.Client):
                     )
             except Exception:
                 logger.exception("Failed to translate message:")
-
-        # Clean up message text by replacing backticks
-        clean_message = message.message.replace("`", "''")
 
         if message.is_vtuber:
             # Display vtuber names clearly
@@ -303,9 +308,8 @@ class DiscordBot(discord.Client):
             content_parts.append(f"**Chat:** [{channel_name}](<{video_url}>)")
 
         if translation is not None:
-            clean_translation = translation.replace("`", "''")
             # TODO: add custom DeepL emote
-            content_parts.append(f"**DeepL:** `{clean_translation}`")
+            content_parts.append(f"**DeepL:** `{translation}`")
 
         # Join all parts with newlines
         return "\n".join(content_parts)
