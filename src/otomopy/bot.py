@@ -196,17 +196,15 @@ class DiscordBot(discord.Client):
         # Count messages received
         self.holodex_chat_messages_received += 1
 
-        # Only process messages from translators or vtubers
-        if not message.is_tl or message.is_vtuber:
-            return
-
         # Add debug logging for every message
         logger.debug(
             f"Received chat message #{self.holodex_chat_messages_received}: {message.author} - {message.message}"
         )
-        logger.debug(
-            f"Message details - Channel: {message.channel_id}, Video: {message.video_id}"
-        )
+        logger.debug(f"Message details: {message}")
+
+        # Only process messages from translators or vtubers
+        if not message.is_tl or message.is_vtuber:
+            return
 
         # Log every 10th message to avoid flooding logs at INFO level
         if self.holodex_chat_messages_received % 10 == 0:
