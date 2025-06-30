@@ -40,55 +40,34 @@ def register_commands(bot):
 
         # Holodex tracking info
         tracked_channels = len(bot.tracked_channels)
-        embed.add_field(
-            name="Tracked YouTube Channels", value=str(tracked_channels), inline=True
-        )
+        embed.add_field(name="Tracked YouTube Channels", value=str(tracked_channels), inline=True)
 
         # WebSocket connection status
         ws_status = (
             "Connected"
-            if (
-                hasattr(bot.holodex_manager, "ws_connected")
-                and bot.holodex_manager.ws_connected
-            )
+            if (hasattr(bot.holodex_manager, "ws_connected") and bot.holodex_manager.ws_connected)
             else "Disconnected"
         )
         embed.add_field(name="WebSocket Status", value=ws_status, inline=True)
 
         # Live streams currently being tracked
         live_stream_count = len(
-            [
-                s
-                for s in bot.holodex_manager.current_streams.values()
-                if s.status == "live"
-            ]
+            [s for s in bot.holodex_manager.current_streams.values() if s.status == "live"]
         )
-        embed.add_field(
-            name="Current Live Streams", value=str(live_stream_count), inline=True
-        )
+        embed.add_field(name="Current Live Streams", value=str(live_stream_count), inline=True)
 
         # Upcoming streams being tracked
         upcoming_stream_count = len(
-            [
-                s
-                for s in bot.holodex_manager.current_streams.values()
-                if s.status == "upcoming"
-            ]
+            [s for s in bot.holodex_manager.current_streams.values() if s.status == "upcoming"]
         )
-        embed.add_field(
-            name="Upcoming Streams", value=str(upcoming_stream_count), inline=True
-        )
+        embed.add_field(name="Upcoming Streams", value=str(upcoming_stream_count), inline=True)
 
         # Chat message stats
         active_subs = len(getattr(bot.holodex_manager, "active_subscriptions", set()))
         chat_messages = getattr(bot, "holodex_chat_messages_received", 0)
         session_id = getattr(bot.holodex_manager, "session_id", "None")
-        embed.add_field(
-            name="Active Chat Subscriptions", value=str(active_subs), inline=True
-        )
-        embed.add_field(
-            name="Chat Messages Received", value=str(chat_messages), inline=True
-        )
+        embed.add_field(name="Active Chat Subscriptions", value=str(active_subs), inline=True)
+        embed.add_field(name="Chat Messages Received", value=str(chat_messages), inline=True)
 
         embed.add_field(
             name="WebSocket Session ID",
@@ -106,9 +85,7 @@ def register_commands(bot):
             embed.add_field(
                 name="Some Tracked Channels",
                 value=(
-                    "\n".join([f"`{ch}`" for ch in recent_channels])
-                    if recent_channels
-                    else "None"
+                    "\n".join([f"`{ch}`" for ch in recent_channels]) if recent_channels else "None"
                 ),
                 inline=False,
             )

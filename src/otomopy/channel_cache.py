@@ -88,11 +88,7 @@ class ChannelCache:
                 data = json.load(f)
 
             # Check for required fields in cache format
-            if (
-                not isinstance(data, dict)
-                or "channels" not in data
-                or "last_update" not in data
-            ):
+            if not isinstance(data, dict) or "channels" not in data or "last_update" not in data:
                 logger.warning("Invalid channel cache format")
                 return False
 

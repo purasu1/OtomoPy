@@ -92,9 +92,7 @@ class HolodexAPI:
                 else:
                     response_text = await response.text()
                     logger.error(f"Error fetching live streams: {response.status}")
-                    logger.error(
-                        f"Response text: {response_text[:500]}..."
-                    )  # First 500 chars
+                    logger.error(f"Response text: {response_text[:500]}...")  # First 500 chars
                     return []
         except Exception:
             logger.exception("Exception fetching live streams:")
@@ -116,9 +114,7 @@ class HolodexAPI:
                 logger.error("Session is None in get_channel_info")
                 return None
 
-            async with self.session.get(
-                f"{self.BASE_URL}/channels/{channel_id}"
-            ) as response:
+            async with self.session.get(f"{self.BASE_URL}/channels/{channel_id}") as response:
                 if response.status == 200:
                     data = await response.json()
                     return data
@@ -175,9 +171,7 @@ class HolodexAPI:
                 await asyncio.sleep(request_delay)
                 api_call_count += 1
 
-                async with self.session.get(
-                    f"{self.BASE_URL}/channels", params=params
-                ) as response:
+                async with self.session.get(f"{self.BASE_URL}/channels", params=params) as response:
                     if response.status == 200:
                         channels = await response.json()
 
@@ -198,9 +192,7 @@ class HolodexAPI:
                         await asyncio.sleep(10)  # Wait 10 seconds before retrying
                         continue
                     else:
-                        logger.error(
-                            f"Error fetching channels for All Vtubers: {response.status}"
-                        )
+                        logger.error(f"Error fetching channels for All Vtubers: {response.status}")
                         break
 
             logger.info(
@@ -309,9 +301,7 @@ class HolodexManager:
         self.future_streams: dict[str, StreamEvent] = (
             {}
         )  # video_id -> StreamEvent for streams >24h away
-        self.active_subscriptions: set[str] = (
-            set()
-        )  # Set of video_ids currently subscribed to
+        self.active_subscriptions: set[str] = set()  # Set of video_ids currently subscribed to
         self.running = False
         self.update_interval = 300  # seconds
         self.api_key = api_key
@@ -368,9 +358,7 @@ class HolodexManager:
         future_streams_task = asyncio.create_task(self._future_streams_loop())
 
         # Wait for the tasks to complete (or be cancelled)
-        await asyncio.gather(
-            stream_task, future_streams_task, self.ws_task, return_exceptions=True
-        )
+        await asyncio.gather(stream_task, future_streams_task, self.ws_task, return_exceptions=True)
 
     async def _initialize_channel_cache(self):
         """Initialize the channel cache.
@@ -393,9 +381,7 @@ class HolodexManager:
         if cache_loaded:
             # If cache exists but is stale, we'll use it as a starting point
             existing_channels = self.channel_cache.get_channels()
-            logger.info(
-                f"Found stale cache with {len(existing_channels)} channels, updating..."
-            )
+            logger.info(f"Found stale cache with {len(existing_channels)} channels, updating...")
 
         # Fetch new channels from API
         logger.info("Fetching channels from Holodex API...")
@@ -415,22 +401,14 @@ class HolodexManager:
             ]
             for channel in new_channels:
                 # Only include active channels with both name and ID
-                if (
-                    channel.get("id")
-                    and channel.get("name")
-                    and not channel.get("inactive", False)
-                ):
+                if channel.get("id") and channel.get("name") and not channel.get("inactive", False):
                     # Create simplified channel object with additional info
-                    filtered_channels.append(
-                        {key: channel.get(key, "") for key in channel_keys}
-                    )
+                    filtered_channels.append({key: channel.get(key, "") for key in channel_keys})
 
             # Update the cache with filtered channels
             if filtered_channels:
                 self.channel_cache.update_cache(filtered_channels)
-                logger.info(
-                    f"Cached {len(filtered_channels)} channels from Holodex API"
-                )
+                logger.info(f"Cached {len(filtered_channels)} channels from Holodex API")
             else:
                 logger.warning("No valid channels found from Holodex API")
         elif existing_channels:
@@ -438,9 +416,7 @@ class HolodexManager:
             logger.warning("Failed to fetch new channels, using existing cache")
             self.channel_cache.update_cache(existing_channels)
         else:
-            logger.error(
-                "Failed to fetch channels from Holodex API and no cache exists"
-            )
+            logger.error("Failed to fetch channels from Holodex API and no cache exists")
 
     async def stop(self):
         """Stop the Holodex stream tracking."""
@@ -464,11 +440,7 @@ class HolodexManager:
             await self.ws.close()
 
         # Close WebSocket session
-        if (
-            hasattr(self, "ws_session")
-            and self.ws_session
-            and not self.ws_session.closed
-        ):
+        if hasattr(self, "ws_session") and self.ws_session and not self.ws_session.closed:
             await self.ws_session.close()
             self.ws_session = None
 
@@ -668,9 +640,7 @@ class HolodexManager:
                                 break
 
                             self.ws_connected = True
-                            retry_delay = (
-                                1  # Reset retry delay on successful connection
-                            )
+                            retry_delay = 1  # Reset retry delay on successful connection
 
                             # Re-subscribe to all active streams
                             await self._resubscribe_to_streams()
@@ -779,9 +749,7 @@ class HolodexManager:
             if video_id in self.current_streams:
                 channel_id = self.current_streams[video_id].channel_id
 
-            chat_message = ChatMessage.from_socket_message(
-                video_id, event_data, channel_id
-            )
+            chat_message = ChatMessage.from_socket_message(video_id, event_data, channel_id)
             await self.chat_callback(chat_message)
         elif event_data.get("type") == "end":
             # Chat ended for this video
@@ -789,9 +757,7 @@ class HolodexManager:
             if video_id in self.active_subscriptions:
                 self.active_subscriptions.remove(video_id)
         else:
-            logger.debug(
-                f"Received non-chat message for video {video_id}: {event_data}"
-            )
+            logger.debug(f"Received non-chat message for video {video_id}: {event_data}")
 
     async def _parse_and_handle_socketio_event(self, message: str):
         """Parse and handle Socket.IO event messages (those starting with '42')."""
@@ -816,14 +782,10 @@ class HolodexManager:
                 elif "/" in event_name and event_name.endswith("/en"):
                     await self._handle_chat_event(event_name, event_data)
                 else:
-                    logger.debug(
-                        f"Received unknown event: {event_name} with data: {event_data}"
-                    )
+                    logger.debug(f"Received unknown event: {event_name} with data: {event_data}")
 
         except json.JSONDecodeError as e:
-            logger.error(
-                f"Failed to parse Socket.IO event JSON: {json_str}, error: {e}"
-            )
+            logger.error(f"Failed to parse Socket.IO event JSON: {json_str}, error: {e}")
         except Exception as e:
             logger.error(f"Error handling Socket.IO event: {e}")
 
@@ -897,10 +859,7 @@ class HolodexManager:
             await self.stream_callback(event)
 
             # Subscribe to chat if appropriate
-            if (
-                event.status in ["live", "upcoming"]
-                and video_id not in self.active_subscriptions
-            ):
+            if event.status in ["live", "upcoming"] and video_id not in self.active_subscriptions:
                 logger.info(f"Subscribing to chat for future stream: {event.video_id}")
                 if self.ws_connected:
                     await self._subscribe_to_chat(video_id)
@@ -963,9 +922,7 @@ class HolodexManager:
                     event.status in ["live", "upcoming"]
                     and video_id not in self.active_subscriptions
                 ):
-                    logger.info(
-                        f"Subscribing to chat for {event.status} stream: {event.video_id}"
-                    )
+                    logger.info(f"Subscribing to chat for {event.status} stream: {event.video_id}")
                     # Wait for WebSocket to be connected before subscribing
                     if self.ws_connected:
                         await self._subscribe_to_chat(video_id)
@@ -1007,9 +964,7 @@ class HolodexManager:
             video_id: YouTube video ID
         """
         if not self.ws_connected or not self.ws:
-            logger.error(
-                f"Cannot subscribe to chat for video {video_id}: WebSocket not connected"
-            )
+            logger.error(f"Cannot subscribe to chat for video {video_id}: WebSocket not connected")
             return
 
         logger.info(f"Subscribing to chat for video {video_id}")

@@ -90,9 +90,7 @@ def register_commands(bot):
         username="The YouTube username of the translator to blacklist (e.g., @vtange)"
     )
     @discord.app_commands.default_permissions(manage_messages=True)
-    async def blacklist_translator_slash(
-        interaction: discord.Interaction, username: str
-    ):
+    async def blacklist_translator_slash(interaction: discord.Interaction, username: str):
         """Blacklist a translator by their YouTube username.
 
         Args:

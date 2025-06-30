@@ -59,9 +59,7 @@ def register_commands(bot):
         for channel in cached_channels:
             channel_name = channel.get("name", "").lower()
             channel_english_name = channel.get("english_name")
-            channel_english_name = (
-                "" if not channel_english_name else channel_english_name.lower()
-            )
+            channel_english_name = "" if not channel_english_name else channel_english_name.lower()
 
             # Check if query is in either name
             if query in channel_name or query in channel_english_name:
@@ -116,9 +114,7 @@ def register_commands(bot):
         # Defer the response since this might take time
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(
-            interaction.channel, discord.TextChannel
-        ):
+        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             await interaction.followup.send(
                 "This command can only be used in a server text channel", ephemeral=True
             )
@@ -150,9 +146,7 @@ def register_commands(bot):
         )
 
         embed.add_field(name="Channel", value=f"**{channel_name}**", inline=False)
-        embed.add_field(
-            name="Discord Channel", value=f"<#{interaction.channel.id}>", inline=False
-        )
+        embed.add_field(name="Discord Channel", value=f"<#{interaction.channel.id}>", inline=False)
         if channel_photo:
             embed.set_thumbnail(url=channel_photo)
 
@@ -161,7 +155,9 @@ def register_commands(bot):
             await bot.update_tracked_channels()
             embed.description = "✅ Successfully added relay for this YouTube channel!"
         else:
-            embed.description = "ℹ️ This YouTube channel is already being relayed to this Discord channel."
+            embed.description = (
+                "ℹ️ This YouTube channel is already being relayed to this Discord channel."
+            )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -182,9 +178,7 @@ def register_commands(bot):
         # Defer the response since this might take time
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(
-            interaction.channel, discord.TextChannel
-        ):
+        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             await interaction.followup.send(
                 "This command can only be used in a server text channel", ephemeral=True
             )
@@ -192,9 +186,7 @@ def register_commands(bot):
 
         # Try to get channel info for a better response message
         channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
-        channel_name = (
-            channel_info.get("name", channel_id) if channel_info else channel_id
-        )
+        channel_name = channel_info.get("name", channel_id) if channel_info else channel_id
 
         # Remove the relay configuration
         success = bot.config.remove_relay_channel(
@@ -217,9 +209,7 @@ def register_commands(bot):
             value=f"**{channel_name}**" if channel_info else f"`{channel_id}`",
             inline=False,
         )
-        embed.add_field(
-            name="Discord Channel", value=f"<#{interaction.channel.id}>", inline=False
-        )
+        embed.add_field(name="Discord Channel", value=f"<#{interaction.channel.id}>", inline=False)
 
         if success:
             # Update the set of tracked channels
@@ -243,18 +233,14 @@ def register_commands(bot):
         # Defer the response since this might take time if there are many channels
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(
-            interaction.channel, discord.TextChannel
-        ):
+        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             await interaction.followup.send(
                 "This command can only be used in a server text channel", ephemeral=True
             )
             return
 
         # Get relay configurations for this Discord channel
-        relay_channels = bot.config.get_relay_channels(
-            interaction.guild.id, interaction.channel.id
-        )
+        relay_channels = bot.config.get_relay_channels(interaction.guild.id, interaction.channel.id)
 
         if not relay_channels:
             embed = discord.Embed(
@@ -293,9 +279,7 @@ def register_commands(bot):
                 if i == 1 and channel_info.get("photo"):
                     embed.set_thumbnail(url=channel_info.get("photo"))
 
-                embed.add_field(
-                    name=f"{i}. {channel_name}", value=field_value, inline=True
-                )
+                embed.add_field(name=f"{i}. {channel_name}", value=field_value, inline=True)
             else:
                 embed.add_field(
                     name=f"{i}. Unknown Channel",

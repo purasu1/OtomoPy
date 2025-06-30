@@ -40,15 +40,11 @@ class DotEnvConfig:
         load_dotenv()
         token = os.getenv("DISCORD_TOKEN")
         if token is None:
-            raise RuntimeError(
-                "No Discord token found. Please add DISCORD_TOKEN to your .env file"
-            )
+            raise RuntimeError("No Discord token found. Please add DISCORD_TOKEN to your .env file")
 
         owner_id = os.getenv("OWNER_ID")
         if owner_id is None:
-            raise RuntimeError(
-                "No owner ID found. Please add OWNER_ID to your .env file"
-            )
+            raise RuntimeError("No owner ID found. Please add OWNER_ID to your .env file")
         try:
             owner_id = int(owner_id)
         except ValueError:
@@ -56,9 +52,7 @@ class DotEnvConfig:
 
         config_file = os.getenv("CONFIG_FILE")
         if config_file is None:
-            raise RuntimeError(
-                "No config file found. Please add CONFIG_FILE to your .env file"
-            )
+            raise RuntimeError("No config file found. Please add CONFIG_FILE to your .env file")
 
         holodex_api_key = os.getenv("HOLODEX_API_KEY")
         if holodex_api_key is None:
@@ -80,7 +74,9 @@ class DiscordBot(discord.Client):
 
         # Set up minimal intents
         intents = discord.Intents.default()
-        intents.message_content = False  # Disable message content intent as it's not needed for slash commands
+        intents.message_content = (
+            False  # Disable message content intent as it's not needed for slash commands
+        )
 
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
@@ -143,9 +139,7 @@ class DiscordBot(discord.Client):
         Args:
             event: The stream event
         """
-        logger.info(
-            f"Stream event: {event.channel_name} - {event.title} - {event.status}"
-        )
+        logger.info(f"Stream event: {event.channel_name} - {event.title} - {event.status}")
 
         embed = await self._format_stream_event(event)
 
@@ -221,8 +215,8 @@ class DiscordBot(discord.Client):
         # If the message author is a vtuber, see if we can find their channel ID
         message_author_channel_id = None
         if message.is_vtuber:
-            message_author_channel = (
-                self.holodex_manager.channel_cache.get_channel_by_name(message.author)
+            message_author_channel = self.holodex_manager.channel_cache.get_channel_by_name(
+                message.author
             )
             if message_author_channel is not None:
                 message_author_channel_id = message_author_channel.get("id")
@@ -244,9 +238,7 @@ class DiscordBot(discord.Client):
             relay_channels = guild_config.get("relay_channels", {})
             discord_channels = set(relay_channels.get(message.channel_id, []))
             if message_author_channel_id is not None:
-                discord_channels.update(
-                    set(relay_channels.get(message_author_channel_id, []))
-                )
+                discord_channels.update(set(relay_channels.get(message_author_channel_id, [])))
 
             for discord_channel_id_str in discord_channels:
                 try:
@@ -271,16 +263,18 @@ class DiscordBot(discord.Client):
         if self.deepl and message.is_vtuber:
             try:
                 result = self.deepl.translate_text(clean_message, target_lang="EN-GB")
-                # Don't return the translation if the source language is already English
-                if result.detected_source_lang != "EN":
+                # Don't return the translation if the source language is already English,
+                # or if the translation is identical to the original message.
+                if (
+                    result.detected_source_lang != "EN"
+                    and result.message.lower().strip() != clean_message.lower().strip()
+                ):
                     # If any backticks happened to get re-inserted by DeepL, remove
                     # them again.
                     translation = result.text.replace("`", "''")
                     logger.debug(f"Translated message: {translation}")
                 else:
-                    logger.debug(
-                        "Didn't translate message. Source language is already English"
-                    )
+                    logger.debug("Didn't translate message. Source language is already English")
             except Exception:
                 logger.exception("Failed to translate message:")
 

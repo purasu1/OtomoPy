@@ -133,9 +133,7 @@ class GuildConfig:
         self.save()
         return True
 
-    def get_relay_channels(
-        self, guild_id: int, discord_channel_id: int | None = None
-    ) -> dict:
+    def get_relay_channels(self, guild_id: int, discord_channel_id: int | None = None) -> dict:
         """Get all relay channel configurations for a guild or a specific Discord channel.
 
         Args:
