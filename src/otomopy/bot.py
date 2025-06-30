@@ -182,7 +182,10 @@ class DiscordBot(discord.Client):
                 try:
                     dt = datetime.fromisoformat(event.start_time.replace("Z", "+00:00"))
                     timestamp = int(dt.timestamp())
-                    embed.add_field(name="Scheduled for", value=f"<t:{timestamp}:F>")
+                    embed.add_field(
+                        name="Scheduled for",
+                        value=f"<t:{timestamp}:F> (<t:{timestamp}:R>)",
+                    )
                 except Exception as e:
                     logger.error(f"Error formatting timestamp: {e}")
         return embed
@@ -203,7 +206,7 @@ class DiscordBot(discord.Client):
         logger.debug(f"Message details: {message}")
 
         # Only process messages from translators or vtubers
-        if not message.is_tl or message.is_vtuber:
+        if not (message.is_tl or message.is_vtuber):
             return
 
         # Log every 10th message to avoid flooding logs at INFO level
