@@ -393,6 +393,7 @@ class HolodexManager:
             channel_keys = [
                 "id",
                 "name",
+                "yt_handle",
                 "english_name",
                 "org",
                 "photo",
