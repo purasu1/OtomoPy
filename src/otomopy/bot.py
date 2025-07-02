@@ -221,7 +221,10 @@ class DiscordBot(discord.Client):
             if message_author_channel is not None:
                 message_author_channel_id = message_author_channel.get("id")
 
-        formatted_message = await self._format_message(message)
+        formatted_message = await self._format_message(
+            message,
+            message_author_channel_id,
+        )
 
         # Find all Discord channels this should be relayed to
         for guild_id_str, guild_config in self.config.data.items():
@@ -255,6 +258,7 @@ class DiscordBot(discord.Client):
     async def _format_message(
         self,
         message: ChatMessage,
+        message_author_channel_id: int | None,
     ) -> str:
         # Clean up message text by replacing backticks and stripping emote URLs
         clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
@@ -278,19 +282,23 @@ class DiscordBot(discord.Client):
             except Exception:
                 logger.exception("Failed to translate message:")
 
+        emote = ":speech_balloon:"
         if message.is_vtuber:
             # Display vtuber names clearly
             author_display = f"**{message.author}:**"
+            channel = self.holodex_manager.channel_cache.get_channel_by_name(message.author)
+            if channel is not None:
+                emote = self.config.get_emote(channel.get("org", ""), ":speech_balloon:")
         else:
             # Use spoiler tags for translator name
             author_display = f"||{message.author}:||"
-
-        # Build the message content
-        # TODO: match message author org with custom emotes
-        content_parts = [f":speech_balloon: {author_display} `{clean_message}`"]
+            emote = ":speech_balloon:"
 
         # Add chat source link
         video_url = f"https://www.youtube.com/watch?v={message.video_id}"
+
+        # Build the message content
+        content_parts = [f"{emote} [{author_display}](<{video_url}>) `{clean_message}`"]
 
         # Get channel name from current streams if available
         channel_name = "YouTube Chat"
@@ -298,12 +306,13 @@ class DiscordBot(discord.Client):
             stream_event = self.holodex_manager.current_streams[message.video_id]
             channel_name = stream_event.channel_name
 
-        if channel_name != message.author:
+        if message.channel_id != message_author_channel_id:
             content_parts.append(f"**Chat:** [{channel_name}](<{video_url}>)")
 
         if translation is not None:
             # TODO: add custom DeepL emote
-            content_parts.append(f"**DeepL:** `{translation}`")
+            deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
+            content_parts.append(f"{deepl_icon} `{translation}`")
 
         # Join all parts with newlines
         return "\n".join(content_parts)
@@ -339,12 +348,13 @@ def main():
         logger.info(f"Owner ID: {dotenv.owner_id}")
 
     # Import commands here to avoid circular imports
-    from otomopy.commands import blacklist, relay, system
+    from otomopy.commands import blacklist, relay, system, emotes
 
     # Register commands with permission checking enforcement
     blacklist.register_commands(bot)
     relay.register_commands(bot)
     system.register_commands(bot)
+    emotes.register_commands(bot)
 
     # Run the bot
     logger.info("Starting bot...")

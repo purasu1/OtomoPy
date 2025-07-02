@@ -13,6 +13,9 @@ from discord import app_commands
 
 logger = logging.getLogger(__name__)
 
+# Look for patterns: :emote_name:||author_name:|| or :emote_name:**author_name:**
+MESSAGE_AUTHOR = re.compile(r"^:([^:]+): ?(?:\|\||\*\*)(.+?)(?::\|\||\:\*\*)")
+
 
 def register_commands(bot):
     """Register blacklist commands with the bot.
@@ -259,12 +262,11 @@ def _extract_translator_from_message(message_content: str) -> str | None:
     Returns:
         str: translator_name or None if not found
     """
-    # Look for the pattern: :speech_balloon: ||@username:||
-    pattern = r":speech_balloon:\s*\|\|(.+?):\|\|"
-    match = re.search(pattern, message_content)
+
+    match = MESSAGE_AUTHOR.search(message_content)
 
     if match:
-        translator_name = match.group(1).strip()
+        translator_name = match.group(2).strip()
         return translator_name if translator_name else None
 
     return None

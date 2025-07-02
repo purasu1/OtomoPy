@@ -254,3 +254,64 @@ class GuildConfig:
         """
         guild_config = self.get_guild_config(guild_id)
         return guild_config.get("tl_blacklist", [])
+
+    def get_emote(
+        self,
+        name: str,
+        default: str | None = None,
+    ) -> str | None:
+        """Get emote by name.
+
+        Args:
+            name: The name (e.g. VTuber org) to fetch an emote for
+
+        Returns:
+            str: The emote markdown, if configured
+        """
+        if "emotes" not in self.data:
+            return None
+
+        return self.data["emotes"].get(name, default)
+
+    def set_emote(
+        self,
+        name: str,
+        emote: str,
+    ) -> bool:
+        """Set emote by name.
+
+        Args:
+            name: The name (e.g. VTuber org) to fetch an emote for
+            emote: The emote markdown to set
+
+        Returns:
+            bool: True if the emote was set, False otherwise
+        """
+        if "emotes" not in self.data:
+            self.data["emotes"] = {}
+
+        self.data["emotes"][name] = emote
+        self.save()
+        return True
+
+    def unset_emote(
+        self,
+        name: str,
+    ) -> bool:
+        """Unset emote by name.
+
+        Args:
+            name: The name (e.g. VTuber org) to fetch an emote for
+
+        Returns:
+            bool: True if the emote was unset, False otherwise
+        """
+        if "emotes" not in self.data:
+            return False
+
+        if name in self.data["emotes"]:
+            del self.data["emotes"][name]
+            self.save()
+            return True
+
+        return False
