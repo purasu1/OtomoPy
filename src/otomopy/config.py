@@ -271,7 +271,7 @@ class GuildConfig:
         if "emotes" not in self.data:
             return None
 
-        return self.data["emotes"].get(name, default)
+        return self.data["emotes"].get(name.lower(), default)
 
     def set_emote(
         self,
@@ -290,7 +290,7 @@ class GuildConfig:
         if "emotes" not in self.data:
             self.data["emotes"] = {}
 
-        self.data["emotes"][name] = emote
+        self.data["emotes"][name.lower()] = emote
         self.save()
         return True
 
@@ -309,8 +309,8 @@ class GuildConfig:
         if "emotes" not in self.data:
             return False
 
-        if name in self.data["emotes"]:
-            del self.data["emotes"][name]
+        if name.lower() in self.data["emotes"]:
+            del self.data["emotes"][name.lower()]
             self.save()
             return True
 
