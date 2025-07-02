@@ -23,7 +23,7 @@ def register_commands(bot):
     @discord.app_commands.default_permissions(administrator=True)
     async def set_emote(interaction: discord.Interaction, name: str, emote: str):
         """Set an emote for the bot. Only the owner is allowed to use this command."""
-        if interaction.user.id != bot.owner_id:
+        if interaction.user.id != bot.dotenv.owner_id:
             await interaction.response.send_message(
                 "You are not authorized to use this command.", ephemeral=True
             )
