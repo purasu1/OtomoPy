@@ -271,7 +271,7 @@ class DiscordBot(discord.Client):
                 # or if the translation is identical to the original message.
                 if (
                     result.detected_source_lang != "EN"
-                    and result.message.lower().strip() != clean_message.lower().strip()
+                    and result.text.lower().strip() != clean_message.lower().strip()
                 ):
                     # If any backticks happened to get re-inserted by DeepL, remove
                     # them again.
