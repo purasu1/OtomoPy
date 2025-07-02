@@ -29,6 +29,7 @@ def register_commands(bot):
             )
             return
         bot.config.set_emote(name, emote)
+        await interaction.response.send_message("Emote set successfully.", ephemeral=True)
 
     @bot.tree.command(name="unset_emote", description="Unset an emote for the bot")
     @discord.app_commands.default_permissions(administrator=True)
