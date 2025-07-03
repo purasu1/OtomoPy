@@ -20,7 +20,7 @@ from otomopy.holodex import ChatMessage, HolodexManager, StreamEvent
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(pathname)s:%(lineno)d - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,6 @@ class DiscordBot(discord.Client):
     async def setup_hook(self):
         """Set up the bot and synchronize commands."""
         # This copies the global commands over to your guild.
-        # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))  # For testing in a specific server
         await self.tree.sync()  # For global commands
 
         # Start tracking Holodex channels
@@ -144,7 +143,7 @@ class DiscordBot(discord.Client):
         embed = await self._format_stream_event(event)
 
         # Find all Discord channels this should be relayed to
-        for guild_id_str, guild_config in self.config.data.items():
+        for guild_id_str, guild_config in self.config.data["guilds"].items():
             relay_channels = guild_config.get("relay_channels", {})
 
             # If this YouTube channel is being relayed in this guild
@@ -285,20 +284,20 @@ class DiscordBot(discord.Client):
         emote = ":speech_balloon:"
         if message.is_vtuber:
             # Display vtuber names clearly
-            author_display = f"**{message.author}:**"
+            author_display = f"**{message.author}**"
             channel = self.holodex_manager.channel_cache.get_channel_by_name(message.author)
             if channel is not None:
                 emote = self.config.get_emote(channel.get("org", ""), ":speech_balloon:")
         else:
             # Use spoiler tags for translator name
-            author_display = f"||{message.author}:||"
+            author_display = f"||{message.author}||"
             emote = ":speech_balloon:"
 
         # Add chat source link
         video_url = f"https://www.youtube.com/watch?v={message.video_id}"
 
         # Build the message content
-        content_parts = [f"{emote} [{author_display}](<{video_url}>) `{clean_message}`"]
+        content_parts = [f"{emote} {author_display} in [YT](<{video_url}>): `{clean_message}`"]
 
         # Get channel name from current streams if available
         channel_name = "YouTube Chat"

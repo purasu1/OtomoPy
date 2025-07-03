@@ -47,15 +47,17 @@ class GuildConfig:
         Returns:
             Dict: The guild configuration dictionary
         """
+        if "guilds" not in self.data:
+            self.data["guilds"] = {}
         guild_id_str = str(guild_id)
-        if guild_id_str not in self.data:
-            self.data[guild_id_str] = {
+        if guild_id_str not in self.data["guilds"]:
+            self.data["guilds"][guild_id_str] = {
                 "admin_roles": [],
                 "relay_channels": {},
                 "tl_blacklist": [],
             }
             self.save()
-        return self.data[guild_id_str]
+        return self.data["guilds"][guild_id_str]
 
     def add_relay_channel(
         self, guild_id: int, discord_channel_id: int, youtube_channel_id: str
