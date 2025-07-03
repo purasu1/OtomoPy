@@ -13,8 +13,8 @@ from discord import app_commands
 
 logger = logging.getLogger(__name__)
 
-# Look for patterns: :emote_name:||author_name:|| or :emote_name:**author_name:**
-MESSAGE_AUTHOR = re.compile(r"^:([^:]+): ?(?:\|\||\*\*)(.+?)(?::\|\||\:\*\*)")
+# Look for patterns: :emote_name:||author_name|| or :emote_name:**author_name**
+MESSAGE_AUTHOR = re.compile(r"^:([^:]+):\s?(?:\|\||\*\*)(.+?)(?:\|\||\*\*)")
 
 
 def register_commands(bot):
