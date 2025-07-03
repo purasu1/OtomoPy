@@ -226,7 +226,7 @@ class DiscordBot(discord.Client):
         )
 
         # Find all Discord channels this should be relayed to
-        for guild_id_str, guild_config in self.config.data.items():
+        for guild_id_str, guild_config in self.config.data["guilds"].items():
             # Check if the message author is blacklisted in this guild
             # Use translator name directly without any modifications
             guild_id = int(guild_id_str)
