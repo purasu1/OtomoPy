@@ -785,6 +785,11 @@ class HolodexManager:
                 channel_id = self.current_streams[video_id].channel_id
 
             chat_message = ChatMessage.from_socket_message(video_id, event_data, channel_id)
+
+            if not chat_message.message.strip():
+                # Received an empty message, don't process it
+                return
+
             if chat_message.is_vtuber:
                 await self.vtuber_callback(chat_message)
             else:
