@@ -306,8 +306,13 @@ class DiscordBot(discord.Client):
             logger.warning(f"Channel not found for user {message.author}")
             return
 
+        author_name = message_author_channel["english_name"]
+        if not author_name:
+            # English name is either null or empty, use default name
+            author_name = message_author_channel["name"]
+
         webhook_args = dict(
-            username=message_author_channel["name"],
+            username=author_name,
             avatar_url=message_author_channel["photo"],
             allowed_mentions=discord.AllowedMentions.none(),
             suppress_embeds=True,
