@@ -314,9 +314,10 @@ class DiscordBot(discord.Client):
         )
 
         # Assemble the chat message
-        content_parts = [SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))]
+        clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
+        content_parts = [clean_message]
 
-        message_translation = await self.tl_message(message.message)
+        message_translation = await self.tl_message(clean_message)
         if message_translation is not None:
             deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
             content_parts.append(f"{deepl_icon} `{message_translation}`")
