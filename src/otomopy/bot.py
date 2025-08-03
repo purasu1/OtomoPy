@@ -316,7 +316,9 @@ class DiscordBot(discord.Client):
             content_parts.append(f"{deepl_icon} `{message_translation}`")
 
         if message_author_channel["id"] != message.channel_id:
-            message_channel = await self.holodex_manager.get_channel(message.channel_id)
+            message_channel = await self.holodex_manager.channel_cache.get_channel_by_id(
+                message.channel_id
+            )
             if message_channel is None:
                 logger.warning(f"Channel not found for message {message.channel_id}")
             else:
