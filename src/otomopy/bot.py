@@ -280,7 +280,13 @@ class DiscordBot(discord.Client):
                 result = self.deepl.translate_text(message, target_lang="EN-GB")
                 if isinstance(result, list):
                     raise ValueError("Only a single translation result was expected")
-                return result.text
+                # Only return the translation if the detected source language isn't English,
+                # and the translation differs from the original message.
+                if (
+                    result.detected_source_lang != "EN"
+                    and result.text.lower().strip() != message.lower().strip()
+                ):
+                    return result.text.replace("`", "''")
             except Exception:
                 logger.exception("Error translating message:")
         return None
