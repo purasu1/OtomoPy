@@ -170,6 +170,9 @@ class GuildConfig:
         """
         all_channels = set()
 
+        if "guilds" not in self.data:
+            self.data["guilds"] = {}
+
         for guild_config in self.data["guilds"].values():
             relay_channels = guild_config.get("relay_channels", {})
             if relay_channels:

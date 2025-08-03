@@ -55,6 +55,7 @@ class ChannelCache:
         self._channels = value
         self._channel_by_name = {channel["name"]: channel for channel in value}
         self._channel_by_id = {channel["id"]: channel for channel in value}
+        self._channel_by_handle = {}  # this is managed by the HolodexManager
 
     def is_cache_valid(self) -> bool:
         """Check if the cache is valid and not expired.
@@ -165,6 +166,17 @@ class ChannelCache:
             Channel data or None if not found
         """
         return self._channel_by_name.get(channel_name)
+
+    def get_channel_by_handle(self, channel_handle: str) -> dict[str, Any] | None:
+        """Get a specific channel by its handle.
+
+        Args:
+            channel_handle: YouTube channel handle
+
+        Returns:
+            Channel data or None if not found
+        """
+        return self._channel_by_handle.get(channel_handle)
 
     def search_channels(self, query: str) -> list[dict[str, Any]]:
         """Search for channels in the cache by name.

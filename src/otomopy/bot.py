@@ -10,6 +10,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 
 from otomopy.config import GuildConfig
 from otomopy.holodex import ChatMessage, HolodexManager, StreamEvent
+from otomopy.webhook_manager import WebhookManager
 
 # Set up logging
 logging.basicConfig(
@@ -82,6 +84,9 @@ class DiscordBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.config = GuildConfig(self.dotenv.config_file)
 
+        # Initialize webhook manager
+        self.webhook_manager = WebhookManager()
+
         # Set the cache directory to the same directory as the config file
         config_dir = os.path.dirname(os.path.abspath(self.dotenv.config_file))
         os.environ["OTOMOPY_CONFIG_DIR"] = config_dir
@@ -127,7 +132,10 @@ class DiscordBot(discord.Client):
         """Start tracking live streams from Holodex."""
         try:
             await self.holodex_manager.start(
-                self.tracked_channels, self.on_stream_event, self.on_chat_message
+                self.tracked_channels,
+                self.on_stream_event,
+                self.on_chat_message,
+                self.on_vtuber_message,
             )
         except Exception as e:
             logger.error(f"Error in Holodex tracking: {e}")
@@ -201,8 +209,8 @@ class DiscordBot(discord.Client):
         )
         logger.debug(f"Message details: {message}")
 
-        # Only process messages from translators or vtubers
-        if not (message.is_tl or message.is_vtuber):
+        # Only process non-vtuber messages from translators
+        if not message.is_tl:
             return
 
         # Log every 10th message to avoid flooding logs at INFO level
@@ -211,19 +219,7 @@ class DiscordBot(discord.Client):
                 f"Chat messages received: {self.holodex_chat_messages_received}, Latest: {message.author} - {message.message}"
             )
 
-        # If the message author is a vtuber, see if we can find their channel ID
-        message_author_channel_id = None
-        if message.is_vtuber:
-            message_author_channel = self.holodex_manager.channel_cache.get_channel_by_name(
-                message.author
-            )
-            if message_author_channel is not None:
-                message_author_channel_id = message_author_channel.get("id")
-
-        formatted_message = await self._format_message(
-            message,
-            message_author_channel_id,
-        )
+        formatted_message = await self._format_message(message)
 
         # Find all Discord channels this should be relayed to
         for guild_id_str, guild_config in self.config.data["guilds"].items():
@@ -239,8 +235,6 @@ class DiscordBot(discord.Client):
             # Get all channels on this guild to relay the message to
             relay_channels = guild_config.get("relay_channels", {})
             discord_channels = set(relay_channels.get(message.channel_id, []))
-            if message_author_channel_id is not None:
-                discord_channels.update(set(relay_channels.get(message_author_channel_id, [])))
 
             for discord_channel_id_str in discord_channels:
                 try:
@@ -257,64 +251,112 @@ class DiscordBot(discord.Client):
     async def _format_message(
         self,
         message: ChatMessage,
-        message_author_channel_id: int | None,
     ) -> str:
         # Clean up message text by replacing backticks and stripping emote URLs
         clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
 
-        translation = None
-        if self.deepl and message.is_vtuber:
-            try:
-                result = self.deepl.translate_text(clean_message, target_lang="EN-GB")
-                # Don't return the translation if the source language is already English,
-                # or if the translation is identical to the original message.
-                if (
-                    result.detected_source_lang != "EN"
-                    and result.text.lower().strip() != clean_message.lower().strip()
-                ):
-                    # If any backticks happened to get re-inserted by DeepL, remove
-                    # them again.
-                    translation = result.text.replace("`", "''")
-                    logger.debug(f"Translated message: {translation}")
-                else:
-                    logger.debug("Didn't translate message. Source language is already English")
-            except Exception:
-                logger.exception("Failed to translate message:")
-
+        author_display = f"||{message.author}||"
         emote = ":speech_balloon:"
-        if message.is_vtuber:
-            # Display vtuber names clearly
-            author_display = f"**{message.author}**"
-            channel = self.holodex_manager.channel_cache.get_channel_by_name(message.author)
-            if channel is not None:
-                emote = self.config.get_emote(channel.get("org", ""), ":speech_balloon:")
-        else:
-            # Use spoiler tags for translator name
-            author_display = f"||{message.author}||"
-            emote = ":speech_balloon:"
 
         # Add chat source link
         video_url = f"https://www.youtube.com/watch?v={message.video_id}"
 
         # Build the message content
-        content_parts = [f"{emote} {author_display} in [YT](<{video_url}>): `{clean_message}`"]
+        content_parts = [f"{emote} {author_display}: `{clean_message}`"]
 
-        # Get channel name from current streams if available
-        channel_name = "YouTube Chat"
-        if message.video_id in self.holodex_manager.current_streams:
-            stream_event = self.holodex_manager.current_streams[message.video_id]
-            channel_name = stream_event.channel_name
-
-        if message.channel_id != message_author_channel_id:
-            content_parts.append(f"**Chat:** [{channel_name}](<{video_url}>)")
-
-        if translation is not None:
-            # TODO: add custom DeepL emote
-            deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
-            content_parts.append(f"{deepl_icon} `{translation}`")
+        message_channel = self.holodex_manager.channel_cache.get_channel_by_id(message.channel_id)
+        if message_channel is None:
+            logger.warning(f"Channel not found for message {message.channel_id}")
+        else:
+            video_url = f"https://www.youtube.com/watch?v={message.video_id}"
+            content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
 
         # Join all parts with newlines
         return "\n".join(content_parts)
+
+    async def tl_message(self, message: str) -> str | None:
+        if self.deepl:
+            try:
+                result = self.deepl.translate_text(message, target_lang="EN-GB")
+                if isinstance(result, list):
+                    raise ValueError("Only a single translation result was expected")
+                return result.text
+            except Exception:
+                logger.exception("Error translating message:")
+        return None
+
+    async def on_vtuber_message(self, message: ChatMessage):
+        """Handle a vtuber chat message event from Holodex.
+
+        Args:
+            message: The chat message
+        """
+
+        # Count messages received
+        self.holodex_chat_messages_received += 1
+
+        message_author_channel = await self.holodex_manager.get_channel(message.author)
+        if message_author_channel is None:
+            logger.warning(f"Channel not found for user {message.author}")
+            return
+
+        webhook_args = dict(
+            username=message_author_channel["name"],
+            avatar_url=message_author_channel["photo"],
+            allowed_mentions=discord.AllowedMentions.none(),
+            suppress_embeds=True,
+        )
+
+        # Assemble the chat message
+        content_parts = [SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))]
+
+        message_translation = await self.tl_message(message.message)
+        if message_translation is not None:
+            deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
+            content_parts.append(f"{deepl_icon} `{message_translation}`")
+
+        if message_author_channel["id"] != message.channel_id:
+            message_channel = await self.holodex_manager.get_channel(message.channel_id)
+            if message_channel is None:
+                logger.warning(f"Channel not found for message {message.channel_id}")
+            else:
+                video_url = f"https://www.youtube.com/watch?v={message.video_id}"
+                content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
+
+        chat_message = "\n".join(content_parts)
+
+        for guild_id_str, guild_config in self.config.data["guilds"].items():
+            guild_id = int(guild_id_str)
+            if self.config.is_user_blacklisted(guild_id, message.author):
+                logger.debug(
+                    f"Skipping message from blacklisted user {message.author} in guild {guild_id}"
+                )
+                continue
+
+            # Get all channels on this guild to relay the message to
+            relay_channels = guild_config.get("relay_channels", {})
+            discord_channels = set(relay_channels.get(message.channel_id, []))
+            discord_channels.update(set(relay_channels.get(message_author_channel["id"], [])))
+
+            for discord_channel_id_str in discord_channels:
+                try:
+                    # Get the Discord channel
+                    channel = self.get_channel(int(discord_channel_id_str))
+                    if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
+                        logging.error(f"Invalid channel ID: {discord_channel_id_str}")
+                        continue
+
+                    webhook = await self.webhook_manager.get_or_create_webhook(channel)
+                    if webhook is None:
+                        logging.error(f"Failed to get webhook for channel {channel.id}")
+                        continue
+
+                    if isinstance(channel, discord.Thread):
+                        await webhook.send(chat_message, thread=channel, **webhook_args)
+                    else:
+                        await webhook.send(chat_message, **webhook_args)
+                except Exception:
+                    logger.exception("Error sending chat message:")
 
     def _get_status_color(self, status: str) -> discord.Color:
         """Get the embed color for a stream status.
@@ -359,8 +401,8 @@ def main():
     logger.info("Starting bot...")
     try:
         bot.run(dotenv.token)
-    except Exception as e:
-        logger.error(f"Error running bot: {e}")
+    except Exception:
+        logger.exception(f"Error running bot:")
     finally:
         # Make sure we clean up the Holodex manager task
         if bot.holodex_task and not bot.holodex_task.done():

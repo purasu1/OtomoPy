@@ -203,6 +203,23 @@ class HolodexAPI:
             logger.exception("Exception fetching channels:")
             return []
 
+    async def get_handle_info(self, handle: str) -> dict[str, Any] | None:
+        await self.initialize()
+
+        if self.session is None:
+            logger.error("Session not initialized")
+            return None
+
+        url = f"{self.BASE_URL}/channels/{handle}"
+        async with self.session.get(url) as response:
+            if response.status == 200:
+                return await response.json()
+            elif response.status == 404:
+                return None
+            else:
+                logger.error(f"Error fetching handle info for {handle}: {response.status}")
+                return None
+
 
 @dataclass
 class StreamEvent:
@@ -306,6 +323,7 @@ class HolodexManager:
         self.update_interval = 300  # seconds
         self.api_key = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
+        self.channel_handles: dict[str, Any] = {}  # Cache of channel info by handle
 
         # WebSocket connection
         self.ws = None
@@ -328,6 +346,7 @@ class HolodexManager:
         tracked_channels: set[str],
         stream_callback: Callable[[StreamEvent], Awaitable[None]],
         chat_callback: Callable[[ChatMessage], Awaitable[None]],
+        vtuber_callback: Callable[[ChatMessage], Awaitable[None]],
     ):
         """Start the Holodex stream tracking.
 
@@ -339,6 +358,7 @@ class HolodexManager:
         self.running = True
         self.stream_callback = stream_callback
         self.chat_callback = chat_callback
+        self.vtuber_callback = vtuber_callback
         self.tracked_channels = tracked_channels
 
         # Load channel cache or fetch channels if cache is invalid
@@ -477,6 +497,20 @@ class HolodexManager:
             self._cleanup_removed_channels(removed_channels)
 
         logger.info(f"Now tracking {len(self.tracked_channels)} total channels")
+
+    async def get_channel(self, name: str) -> dict[str, Any] | None:
+        if name.startswith("@"):
+            # This is a handle
+            channel = self.channel_cache.get_channel_by_handle(name)
+            if channel is None:
+                channel = await self.api.get_handle_info(name)
+                if channel is None:
+                    return None
+                self.channel_cache._channel_by_handle[name] = channel
+
+            name = channel["name"]
+
+        return self.channel_cache.get_channel_by_name(name)
 
     def _cleanup_removed_channels(self, removed_channels: set[str]):
         """Clean up streams from channels that are no longer being tracked.
@@ -751,7 +785,10 @@ class HolodexManager:
                 channel_id = self.current_streams[video_id].channel_id
 
             chat_message = ChatMessage.from_socket_message(video_id, event_data, channel_id)
-            await self.chat_callback(chat_message)
+            if chat_message.is_vtuber:
+                await self.vtuber_callback(chat_message)
+            else:
+                await self.chat_callback(chat_message)
         elif event_data.get("type") == "end":
             # Chat ended for this video
             logger.info(f"Chat ended for video {video_id}")

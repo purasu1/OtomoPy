@@ -114,9 +114,11 @@ def register_commands(bot):
         # Defer the response since this might take time
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, (discord.TextChannel, discord.Thread)
+        ):
             await interaction.followup.send(
-                "This command can only be used in a server text channel", ephemeral=True
+                "This command can only be used in a server text channel or thread", ephemeral=True
             )
             return
 
