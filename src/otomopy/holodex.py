@@ -122,7 +122,7 @@ class HolodexAPI:
                     logger.error(f"Error fetching channel info: {response.status}")
                     return None
         except Exception:
-            logger.exception(f"Exception fetching channel info:")
+            logger.exception("Exception fetching channel info:")
             return None
 
     async def get_all_channels(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -489,7 +489,7 @@ class HolodexManager:
                 try:
                     await self._update_streams(self.tracked_channels)
                 except Exception:
-                    logger.exception(f"Error during immediate stream update")
+                    logger.exception("Error during immediate stream update")
 
         if removed_channels:
             logger.info(f"Removed {len(removed_channels)} channels from tracking")
@@ -544,7 +544,7 @@ class HolodexManager:
                 await self._update_streams(self.tracked_channels)
                 await asyncio.sleep(self.update_interval)
             except Exception:
-                logger.exception(f"Error in stream update loop")
+                logger.exception("Error in stream update loop")
                 await asyncio.sleep(5)  # Short delay before retry on error
 
     async def _future_streams_loop(self):
@@ -555,7 +555,7 @@ class HolodexManager:
                 # Check future streams more frequently (every 5 minutes)
                 await asyncio.sleep(300)
             except Exception:
-                logger.exception(f"Error in future streams loop")
+                logger.exception("Error in future streams loop")
                 await asyncio.sleep(5)  # Short delay before retry on error
 
     async def _establish_websocket_session(self):
@@ -643,7 +643,7 @@ class HolodexManager:
                 # This is expected for the receive timeout
                 continue
             except Exception:
-                logger.exception(f"Error processing WebSocket message")
+                logger.exception("Error processing WebSocket message")
                 break
 
     async def _websocket_loop(self):
@@ -829,7 +829,7 @@ class HolodexManager:
         except json.JSONDecodeError:
             logger.exception(f"Failed to parse Socket.IO event JSON: {json_str}, error:")
         except Exception:
-            logger.exception(f"Error handling Socket.IO event:")
+            logger.exception("Error handling Socket.IO event:")
 
     async def _process_websocket_message(self, message: str):
         """Process incoming Socket.IO WebSocket messages."""
@@ -850,7 +850,7 @@ class HolodexManager:
                 logger.debug(f"Received unhandled Socket.IO message: {message}")
 
         except Exception:
-            logger.exception(f"Error processing WebSocket message:")
+            logger.exception("Error processing WebSocket message:")
 
     def _is_stream_more_than_24h_away(self, event: StreamEvent) -> bool:
         """Check if a stream is more than 24 hours in the future.
