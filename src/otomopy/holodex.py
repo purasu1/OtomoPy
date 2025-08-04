@@ -121,8 +121,8 @@ class HolodexAPI:
                 else:
                     logger.error(f"Error fetching channel info: {response.status}")
                     return None
-        except Exception as e:
-            logger.error(f"Exception fetching channel info: {e}")
+        except Exception:
+            logger.exception(f"Exception fetching channel info:")
             return None
 
     async def get_all_channels(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -488,8 +488,8 @@ class HolodexManager:
                 logger.info("Triggering immediate stream update for new channels")
                 try:
                     await self._update_streams(self.tracked_channels)
-                except Exception as e:
-                    logger.error(f"Error during immediate stream update: {e}")
+                except Exception:
+                    logger.exception(f"Error during immediate stream update")
 
         if removed_channels:
             logger.info(f"Removed {len(removed_channels)} channels from tracking")
@@ -543,8 +543,8 @@ class HolodexManager:
             try:
                 await self._update_streams(self.tracked_channels)
                 await asyncio.sleep(self.update_interval)
-            except Exception as e:
-                logger.error(f"Error in stream update loop: {e}")
+            except Exception:
+                logger.exception(f"Error in stream update loop")
                 await asyncio.sleep(5)  # Short delay before retry on error
 
     async def _future_streams_loop(self):
@@ -554,8 +554,8 @@ class HolodexManager:
                 await self._process_future_streams()
                 # Check future streams more frequently (every 5 minutes)
                 await asyncio.sleep(300)
-            except Exception as e:
-                logger.error(f"Error in future streams loop: {e}")
+            except Exception:
+                logger.exception(f"Error in future streams loop")
                 await asyncio.sleep(5)  # Short delay before retry on error
 
     async def _establish_websocket_session(self):
@@ -642,8 +642,8 @@ class HolodexManager:
             except asyncio.TimeoutError:
                 # This is expected for the receive timeout
                 continue
-            except Exception as e:
-                logger.error(f"Error processing WebSocket message: {e}")
+            except Exception:
+                logger.exception(f"Error processing WebSocket message")
                 break
 
     async def _websocket_loop(self):
@@ -700,16 +700,15 @@ class HolodexManager:
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, max_retry_delay)
 
-                    except (aiohttp.ClientError, ConnectionRefusedError) as e:
-                        logger.error(f"WebSocket connection error: {e}")
+                    except (aiohttp.ClientError, ConnectionRefusedError):
+                        logger.exception("WebSocket connection error")
                         self.ws_connected = False
                         self.ws = None
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, max_retry_delay)
 
-                    except Exception as e:
-                        logger.error(f"Unexpected WebSocket error: {e}")
-                        logger.exception("Full exception details:")
+                    except Exception:
+                        logger.exception("Unexpected WebSocket error:")
                         self.ws_connected = False
                         self.ws = None
                         await asyncio.sleep(retry_delay)
@@ -742,8 +741,8 @@ class HolodexManager:
                 try:
                     await self.ws.send_str("3")  # Send pong response
                     logger.debug("Sent Socket.IO pong response")
-                except Exception as e:
-                    logger.error(f"Failed to send pong response: {e}")
+                except Exception:
+                    logger.exception("Failed to send pong response")
             return True
         elif message.startswith("40"):  # Socket.IO connect
             logger.debug("Socket.IO connection established")
@@ -827,10 +826,10 @@ class HolodexManager:
                 else:
                     logger.debug(f"Received unknown event: {event_name} with data: {event_data}")
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Socket.IO event JSON: {json_str}, error: {e}")
-        except Exception as e:
-            logger.error(f"Error handling Socket.IO event: {e}")
+        except json.JSONDecodeError:
+            logger.exception(f"Failed to parse Socket.IO event JSON: {json_str}, error:")
+        except Exception:
+            logger.exception(f"Error handling Socket.IO event:")
 
     async def _process_websocket_message(self, message: str):
         """Process incoming Socket.IO WebSocket messages."""
@@ -850,9 +849,8 @@ class HolodexManager:
             else:
                 logger.debug(f"Received unhandled Socket.IO message: {message}")
 
-        except Exception as e:
-            logger.error(f"Error processing WebSocket message: {e}")
-            logger.exception("Full exception details:")
+        except Exception:
+            logger.exception(f"Error processing WebSocket message:")
 
     def _is_stream_more_than_24h_away(self, event: StreamEvent) -> bool:
         """Check if a stream is more than 24 hours in the future.
@@ -873,9 +871,9 @@ class HolodexManager:
 
             # Check if more than 24 hours away
             return start_time > now + timedelta(hours=24)
-        except (ValueError, AttributeError) as e:
-            logger.warning(
-                f"Could not parse start_time '{event.start_time}' for stream {event.video_id}: {e}"
+        except (ValueError, AttributeError):
+            logger.exception(
+                f"Could not parse start_time '{event.start_time}' for stream {event.video_id}:"
             )
             return False
 
@@ -1022,8 +1020,8 @@ class HolodexManager:
             logger.debug(f"Sending subscription message: {message}")
             await self.ws.send_str(message)
             logger.info(f"Subscription message sent for video {video_id}")
-        except Exception as e:
-            logger.error(f"Error subscribing to chat for video {video_id}: {e}")
+        except Exception:
+            logger.exception(f"Error subscribing to chat for video {video_id}:")
             if video_id in self.active_subscriptions:
                 self.active_subscriptions.remove(video_id)
 
@@ -1044,8 +1042,8 @@ class HolodexManager:
             # Format as Socket.IO event message: "42" + JSON array with event name and data
             message = f'42["unsubscribe",{{"video_id":"{video_id}","lang":"en"}}]'
             await self.ws.send_str(message)
-        except Exception as e:
-            logger.error(f"Error unsubscribing from chat for video {video_id}: {e}")
+        except Exception:
+            logger.exception(f"Error unsubscribing from chat for video {video_id}:")
 
         # Remove from active subscriptions
         if video_id in self.active_subscriptions:
