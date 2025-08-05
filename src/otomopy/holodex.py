@@ -249,7 +249,7 @@ class StreamEvent:
             channel_id=data["channel"]["id"],
             title=data["title"],
             channel_name=data["channel"]["name"],
-            thumbnail=f"https://i.ytimg.com/vi/{data['id']}/mqdefault.jpg",
+            thumbnail=f"https://i.ytimg.com/vi/{data['id']}/maxresdefault.jpg",
             status=data["status"],
             start_time=data.get("start_scheduled") or data.get("start_actual"),
             live_viewers=data.get("live_viewers"),

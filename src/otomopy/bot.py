@@ -173,7 +173,7 @@ class DiscordBot(discord.Client):
         )
 
         embed.set_author(name=event.channel_name)
-        embed.set_thumbnail(url=event.thumbnail)
+        embed.set_image(url=event.thumbnail)
 
         if event.status == "live":
             embed.description = ":red_circle: **LIVE NOW**"
