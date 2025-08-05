@@ -323,7 +323,7 @@ class DiscordBot(discord.Client):
         content_parts = [clean_message]
 
         message_translation = await self.tl_message(clean_message)
-        if message_translation is not None:
+        if message_translation:
             deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
             content_parts.append(f"{deepl_icon} `{message_translation}`")
 
@@ -416,15 +416,15 @@ def main():
     try:
         bot.run(dotenv.token)
     except Exception:
-        logger.exception(f"Error running bot:")
+        logger.exception("Error running bot:")
     finally:
         # Make sure we clean up the Holodex manager task
         if bot.holodex_task and not bot.holodex_task.done():
             try:
                 bot.holodex_task.cancel()
                 logger.info("Holodex task cancelled")
-            except Exception as e:
-                logger.error(f"Error cancelling Holodex task: {e}")
+            except Exception:
+                logger.exception("Error cancelling Holodex task:")
 
         try:
             # Run the event loop one last time to allow the Holodex manager to clean up
@@ -433,7 +433,7 @@ def main():
             loop.run_until_complete(bot.holodex_manager.stop())
             loop.close()
             logger.info("Holodex manager cleanup complete")
-        except Exception as e:
-            logger.error(f"Error during Holodex manager cleanup: {e}")
+        except Exception:
+            logger.exception("Error during Holodex manager cleanup:")
 
         logger.info("Bot shutdown complete")
