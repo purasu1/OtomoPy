@@ -154,16 +154,16 @@ def register_commands(bot):
 
     # Slash command for removing from blacklist
     @bot.tree.command(
-        name="unblacklist_translator",
-        description="Remove a translator from the blacklist",
+        name="unblacklist",
+        description="Remove a user from the blacklist",
     )
     @app_commands.describe(
         username="The YouTube username of the translator to remove from blacklist"
     )
     @app_commands.autocomplete(username=unblacklist_autocomplete)
     @discord.app_commands.default_permissions(manage_messages=True)
-    async def unblacklist_translator(interaction: discord.Interaction, username: str):
-        """Remove a translator from the blacklist.
+    async def unblacklist(interaction: discord.Interaction, username: str):
+        """Remove a user from the blacklist.
 
         Args:
             interaction: The Discord interaction
@@ -196,11 +196,11 @@ def register_commands(bot):
     # Slash command for listing blacklisted users
     @bot.tree.command(
         name="list_blacklisted",
-        description="List all blacklisted translators for this server",
+        description="List all blacklisted users for this server",
     )
     @discord.app_commands.default_permissions(manage_messages=True)
     async def list_blacklisted(interaction: discord.Interaction):
-        """List all blacklisted translators for this guild.
+        """List all blacklisted users for this guild.
 
         Args:
             interaction: The Discord interaction
@@ -215,7 +215,7 @@ def register_commands(bot):
 
         if not blacklisted_users:
             await interaction.response.send_message(
-                "No translators are currently blacklisted in this server",
+                "No users are currently blacklisted in this server",
                 ephemeral=True,
             )
             return
@@ -226,12 +226,12 @@ def register_commands(bot):
             blacklist_lines.append(f"{i}. `{user_name}`")
 
         # Split into multiple messages if too long
-        message_content = "**Blacklisted Translators:**\n" + "\n".join(blacklist_lines)
+        message_content = "**Blacklisted Users:**\n" + "\n".join(blacklist_lines)
 
         if len(message_content) > 2000:
             # Split into chunks
             chunks = []
-            current_chunk = "**Blacklisted Translators:**\n"
+            current_chunk = "**Blacklisted Users:**\n"
 
             for line in blacklist_lines:
                 if len(current_chunk + line + "\n") > 1900:  # Leave some buffer

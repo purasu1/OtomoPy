@@ -341,9 +341,9 @@ class DiscordBot(discord.Client):
 
         for guild_id_str, guild_config in self.config.data["guilds"].items():
             guild_id = int(guild_id_str)
-            if self.config.is_user_blacklisted(guild_id, message.author):
+            if self.config.is_user_blacklisted(guild_id, message_author_channel["name"]):
                 logger.debug(
-                    f"Skipping message from blacklisted user {message.author} in guild {guild_id}"
+                    f"Skipping message from blacklisted VTuber {message_author_channel['name']} in guild {guild_id}"
                 )
                 continue
 

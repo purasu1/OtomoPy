@@ -118,7 +118,7 @@ def register_commands(bot):
             interaction.channel, (discord.TextChannel, discord.Thread)
         ):
             await interaction.followup.send(
-                "This command can only be used in a server text channel or thread", ephemeral=True
+                "This command can only be used in a server text channel or thread.", ephemeral=True
             )
             return
 
@@ -180,9 +180,11 @@ def register_commands(bot):
         # Defer the response since this might take time
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, (discord.TextChannel, discord.Thread)
+        ):
             await interaction.followup.send(
-                "This command can only be used in a server text channel", ephemeral=True
+                "This command can only be used in a server text channel or thread.", ephemeral=True
             )
             return
 
@@ -235,9 +237,11 @@ def register_commands(bot):
         # Defer the response since this might take time if there are many channels
         await interaction.response.defer(ephemeral=True)
 
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+        if not interaction.guild or not isinstance(
+            interaction.channel, (discord.TextChannel, discord.Thread)
+        ):
             await interaction.followup.send(
-                "This command can only be used in a server text channel", ephemeral=True
+                "This command can only be used in a server text channel or thread.", ephemeral=True
             )
             return
 
@@ -295,3 +299,53 @@ def register_commands(bot):
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # Slash command for blacklisting by username
+    @bot.tree.command(
+        name="blacklist_vtuber",
+        description="Add a VTuber to the blacklist",
+    )
+    @app_commands.describe(channel_id="The YouTube channel name or ID to blacklist")
+    @app_commands.autocomplete(channel_id=channel_autocomplete)
+    @discord.app_commands.default_permissions(manage_messages=True)
+    async def blacklist_vtuber(interaction: discord.Interaction, channel_id: str):
+        """Blacklist a VTuber.
+
+        Args:
+            interaction: The Discord interaction
+            username: The VTuber to blacklist
+        """
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "This command can only be used in a server", ephemeral=True
+            )
+            return
+
+        channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
+        username = channel_info["name"]
+
+        # Use the username directly without any modifications
+        # Check if already blacklisted
+        if bot.config.is_user_blacklisted(interaction.guild.id, username):
+            await interaction.response.send_message(
+                f"**{username}** is already blacklisted", ephemeral=True
+            )
+            return
+
+        # Add to blacklist
+        success = bot.config.add_blacklisted_user(interaction.guild.id, username)
+
+        if success:
+            await interaction.response.send_message(
+                f"✅ **{username}** has been added to the blacklist.\n"
+                f"Their messages will no longer be relayed in this server.",
+                ephemeral=True,
+            )
+            logger.info(
+                f"User {interaction.user} blacklisted VTuber {username} "
+                f"in guild {interaction.guild.name} ({interaction.guild.id})"
+            )
+        else:
+            await interaction.response.send_message(
+                f"Failed to blacklist **{username}**", ephemeral=True
+            )
