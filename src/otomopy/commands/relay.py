@@ -256,7 +256,7 @@ def register_commands(bot):
             )
             embed.add_field(
                 name="How to add",
-                value="Use `/relay` and type at least 2 characters of a VTuber name to see autocomplete suggestions",
+                value="Use `/relay add` and type at least 2 characters of a VTuber name to see autocomplete suggestions",
                 inline=False,
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -295,7 +295,7 @@ def register_commands(bot):
 
         # Add a footer with a hint
         embed.set_footer(
-            text="Use /unrelay and type at least 2 characters of a VTuber name to see autocomplete suggestions"
+            text="Use `/relay remove` and type at least 2 characters of a VTuber name to see autocomplete suggestions"
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
