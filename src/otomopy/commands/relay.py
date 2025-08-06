@@ -94,13 +94,15 @@ def register_commands(bot):
         logger.info(f"Returning {len(choices)} autocomplete choices")
         return choices
 
-    @bot.tree.command(
-        name="relay",
+    # Create a command group for relay commands
+    relay_group = app_commands.Group(name="relay", description="Manage YouTube channel relays")
+
+    @relay_group.command(
+        name="add",
         description="Add a YouTube channel to relay in this Discord channel",
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to relay")
     @app_commands.autocomplete(channel_id=channel_autocomplete)
-    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_add(interaction: discord.Interaction, channel_id: str):
         """Add a YouTube channel to relay in the current Discord channel.
 
@@ -163,13 +165,12 @@ def register_commands(bot):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @bot.tree.command(
-        name="unrelay",
+    @relay_group.command(
+        name="remove",
         description="Remove a YouTube channel relay from this Discord channel",
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to stop relaying")
     @app_commands.autocomplete(channel_id=channel_autocomplete)
-    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_remove(interaction: discord.Interaction, channel_id: str):
         """Remove a YouTube channel relay from the current Discord channel.
 
@@ -223,11 +224,10 @@ def register_commands(bot):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @bot.tree.command(
-        name="relays",
+    @relay_group.command(
+        name="list",
         description="List all YouTube channel relays for this Discord channel",
     )
-    @discord.app_commands.default_permissions(manage_messages=True)
     async def relay_list(interaction: discord.Interaction):
         """List all YouTube channel relays for the current Discord channel.
 
@@ -299,6 +299,10 @@ def register_commands(bot):
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # Add the relay group to the command tree with proper permissions
+    relay_group.default_permissions = discord.Permissions(manage_messages=True)
+    bot.tree.add_command(relay_group)
 
     # Slash command for blacklisting by username
     @bot.tree.command(
