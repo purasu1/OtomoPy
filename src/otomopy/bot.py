@@ -327,15 +327,12 @@ class DiscordBot(discord.Client):
             deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
             content_parts.append(f"{deepl_icon} `{message_translation}`")
 
-        if message_author_channel["id"] != message.channel_id:
-            message_channel = self.holodex_manager.channel_cache.get_channel_by_id(
-                message.channel_id
-            )
-            if message_channel is None:
-                logger.warning(f"Channel not found for message {message.channel_id}")
-            else:
-                video_url = f"https://www.youtube.com/watch?v={message.video_id}"
-                content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
+        message_channel = self.holodex_manager.channel_cache.get_channel_by_id(message.channel_id)
+        if message_channel is None:
+            logger.warning(f"Channel not found for message {message.channel_id}")
+        else:
+            video_url = f"https://www.youtube.com/watch?v={message.video_id}"
+            content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
 
         chat_message = "\n".join(content_parts)
 
