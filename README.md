@@ -42,6 +42,8 @@ CONFIG_FILE=config.json
 HOLODEX_API_KEY=your_holodex_api_key_here
 # Optional:
 DEEPL_API_KEY=your_deepl_api_key_here
+# Stream event skip duration in seconds after bot restart (default: 30)
+STREAM_EVENT_SKIP_DURATION=30
 ```
 
 ## Configuration
