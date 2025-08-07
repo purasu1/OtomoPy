@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
@@ -333,6 +334,10 @@ class HolodexManager:
         self.ws_connecting_lock = asyncio.Lock()
         self.ws_task = None
 
+        # Stream event skip tracking
+        self.initialization_complete_time: float | None = None
+        self.stream_event_skip_duration: int = 30
+
         # Channel cache
         if not cache_dir:
             # Use the directory where the config file is located
@@ -363,6 +368,12 @@ class HolodexManager:
 
         # Load channel cache or fetch channels if cache is invalid
         await self._initialize_channel_cache()
+
+        # Mark initialization as complete
+        self.initialization_complete_time = time.time()
+        logger.info(
+            f"Channel cache initialization complete. Stream events will be skipped for {self.stream_event_skip_duration} seconds."
+        )
 
         # Start WebSocket connection (only if not already connected)
         if not self.ws_task or self.ws_task.done():
@@ -438,6 +449,26 @@ class HolodexManager:
             self.channel_cache.update_cache(existing_channels)
         else:
             logger.error("Failed to fetch channels from Holodex API and no cache exists")
+
+    def should_skip_stream_events(self) -> bool:
+        """Check if stream events should be skipped based on initialization time.
+
+        Returns:
+            bool: True if stream events should be skipped, False otherwise
+        """
+        if self.initialization_complete_time is None:
+            return True  # Skip if initialization hasn't completed yet
+
+        elapsed_time = time.time() - self.initialization_complete_time
+        return elapsed_time < self.stream_event_skip_duration
+
+    def set_stream_event_skip_duration(self, duration: int):
+        """Set the duration to skip stream events after initialization.
+
+        Args:
+            duration: Duration in seconds to skip stream events
+        """
+        self.stream_event_skip_duration = duration
 
     async def stop(self):
         """Stop the Holodex stream tracking."""

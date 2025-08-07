@@ -36,6 +36,7 @@ class DotEnvConfig:
     config_file: str
     holodex_api_key: str
     deepl_api_key: str | None
+    stream_event_skip_duration: int
 
     @classmethod
     def load_env(cls) -> DotEnvConfig:
@@ -64,7 +65,16 @@ class DotEnvConfig:
 
         deepl_api_key = os.getenv("DEEPL_API_KEY")
 
-        return cls(token, owner_id, config_file, holodex_api_key, deepl_api_key)
+        # Get stream event skip duration, default to 30 seconds
+        stream_event_skip_duration_str = os.getenv("STREAM_EVENT_SKIP_DURATION", "30")
+        try:
+            stream_event_skip_duration = int(stream_event_skip_duration_str)
+        except ValueError:
+            stream_event_skip_duration = 30
+
+        return cls(
+            token, owner_id, config_file, holodex_api_key, deepl_api_key, stream_event_skip_duration
+        )
 
 
 class DiscordBot(discord.Client):
@@ -93,6 +103,7 @@ class DiscordBot(discord.Client):
 
         # Holodex integration
         self.holodex_manager = HolodexManager(dotenv.holodex_api_key, config_dir)
+        self.holodex_manager.set_stream_event_skip_duration(dotenv.stream_event_skip_duration)
         self.tracked_channels: set[str] = set()
         self.holodex_task = None
 
@@ -146,6 +157,13 @@ class DiscordBot(discord.Client):
         Args:
             event: The stream event
         """
+        # Check if we should skip stream events during the grace period
+        if self.holodex_manager.should_skip_stream_events():
+            logger.debug(
+                f"Skipping stream event during grace period: {event.channel_name} - {event.title} - {event.status}"
+            )
+            return
+
         logger.info(f"Stream event: {event.channel_name} - {event.title} - {event.status}")
 
         embed = await self._format_stream_event(event)

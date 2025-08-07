@@ -10,6 +10,8 @@ from typing import List
 import discord
 from discord import app_commands
 
+from .autocomplete import channel_autocomplete
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,79 +22,19 @@ def register_commands(bot):
         bot: The DiscordBot instance
     """
 
-    async def channel_autocomplete(
+    async def channel_autocomplete_wrapper(
         interaction: discord.Interaction,
         current: str,
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete callback for channel search.
+        """Wrapper for the shared channel autocomplete function."""
+        return await channel_autocomplete(bot, interaction, current)
 
-        Args:
-            interaction: The Discord interaction
-            current: Current input string
-
-        Returns:
-            List of matching channel choices
-        """
-        logger.info(f"Autocomplete request with query: '{current}'")
-        if not current or len(current.strip()) < 2:
-            logger.info("Query too short, returning empty results")
-            return []
-
-        # Normalize the search query
-        query = current.lower().strip()
-
-        if not hasattr(bot, "holodex_manager"):
-            logger.info("Holodex manager not initialized")
-            return []
-
-        if not hasattr(bot.holodex_manager, "channel_cache"):
-            logger.info("Channel cache not initialized")
-            return []
-
-        cached_channels = bot.holodex_manager.channel_cache.get_channels()
-        if not cached_channels:
-            logger.info("No cached channels found")
-            return []
-
-        # Search the cache for matching channels
-        matches = []
-        for channel in cached_channels:
-            channel_name = channel.get("name", "").lower()
-            channel_english_name = channel.get("english_name")
-            channel_english_name = "" if not channel_english_name else channel_english_name.lower()
-
-            # Check if query is in either name
-            if query in channel_name or query in channel_english_name:
-                matches.append(channel)
-
-        # Format results as choices
-        choices = []
-        for vtuber in matches[:25]:  # Discord limits to 25 choices
-            name = vtuber.get("name", "")
-            channel_id = vtuber.get("id", "")
-            org = vtuber.get("org", "")
-            english_name = vtuber.get("english_name", "")
-
-            # Format the display name
-            if english_name and english_name.lower() not in name.lower():
-                display_name = f"{english_name} ({name})"
-            else:
-                display_name = name
-
-            # Add organization
-            if org:
-                display_name = f"{display_name} [{org}]"
-
-            # Add to choices
-            choices.append(
-                app_commands.Choice(
-                    name=display_name[:100],  # Discord limits to 100 chars
-                    value=channel_id,
-                )
-            )
-
-        logger.info(f"Returning {len(choices)} autocomplete choices")
-        return choices
+    async def relay_remove_autocomplete_wrapper(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Wrapper for the shared channel autocomplete function (relayed only)."""
+        return await channel_autocomplete(bot, interaction, current, filter_relayed_only=True)
 
     # Create a command group for relay commands
     relay_group = app_commands.Group(name="relay", description="Manage YouTube channel relays")
@@ -102,7 +44,7 @@ def register_commands(bot):
         description="Add a YouTube channel to relay in this Discord channel",
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to relay")
-    @app_commands.autocomplete(channel_id=channel_autocomplete)
+    @app_commands.autocomplete(channel_id=channel_autocomplete_wrapper)
     async def relay_add(interaction: discord.Interaction, channel_id: str):
         """Add a YouTube channel to relay in the current Discord channel.
 
@@ -124,16 +66,20 @@ def register_commands(bot):
             )
             return
 
-        # Verify the channel exists on YouTube via Holodex
-        channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
+        # First check if channel exists in our cache
+        channel_info = bot.holodex_manager.channel_cache.get_channel_by_id(channel_id)
+
+        # If not in cache, verify the channel exists on YouTube via Holodex API
         if not channel_info:
-            await interaction.followup.send(
-                f"Could not find YouTube channel with ID `{channel_id}`. "
-                f"Please verify the ID is correct.\n\n"
-                f"The ID should start with 'UC' and be 24 characters long.",
-                ephemeral=True,
-            )
-            return
+            channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
+            if not channel_info:
+                await interaction.followup.send(
+                    f"Could not find YouTube channel with ID `{channel_id}`. "
+                    f"Please verify the ID is correct.\n\n"
+                    f"The ID should start with 'UC' and be 24 characters long.",
+                    ephemeral=True,
+                )
+                return
 
         # Add the relay configuration
         success = bot.config.add_relay_channel(
@@ -170,7 +116,7 @@ def register_commands(bot):
         description="Remove a YouTube channel relay from this Discord channel",
     )
     @app_commands.describe(channel_id="The YouTube channel name or ID to stop relaying")
-    @app_commands.autocomplete(channel_id=channel_autocomplete)
+    @app_commands.autocomplete(channel_id=relay_remove_autocomplete_wrapper)
     async def relay_remove(interaction: discord.Interaction, channel_id: str):
         """Remove a YouTube channel relay from the current Discord channel.
 
@@ -189,8 +135,8 @@ def register_commands(bot):
             )
             return
 
-        # Try to get channel info for a better response message
-        channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
+        # Try to get channel info from cache for a better response message
+        channel_info = bot.holodex_manager.channel_cache.get_channel_by_id(channel_id)
         channel_name = channel_info.get("name", channel_id) if channel_info else channel_id
 
         # Remove the relay configuration
@@ -271,8 +217,8 @@ def register_commands(bot):
 
         # Add each channel as a field
         for i, youtube_id in enumerate(relay_channels.keys(), 1):
-            # Try to get channel info from Holodex
-            channel_info = await bot.holodex_manager.api.get_channel_info(youtube_id)
+            # Try to get channel info from cache
+            channel_info = bot.holodex_manager.channel_cache.get_channel_by_id(youtube_id)
 
             if channel_info:
                 channel_name = channel_info.get("name", youtube_id)
@@ -300,56 +246,265 @@ def register_commands(bot):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    # Add the relay group to the command tree with proper permissions
-    relay_group.default_permissions = discord.Permissions(manage_messages=True)
-    bot.tree.add_command(relay_group)
+    class RelayListView(discord.ui.View):
+        """View for paginated relay list display."""
 
-    # Slash command for blacklisting by username
-    @bot.tree.command(
-        name="blacklist_vtuber",
-        description="Add a VTuber to the blacklist",
+        def __init__(self, pages: List[discord.Embed], timeout: float = 300.0):
+            super().__init__(timeout=timeout)
+            self.pages = pages
+            self.current_page = 0
+
+            # Disable buttons if only one page
+            if len(pages) <= 1:
+                self.previous_page.disabled = True
+                self.next_page.disabled = True
+            else:
+                self.previous_page.disabled = True  # Start with previous disabled
+
+        def update_buttons(self):
+            """Update button states based on current page."""
+            self.previous_page.disabled = self.current_page == 0
+            self.next_page.disabled = self.current_page == len(self.pages) - 1
+
+        @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+        async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.current_page > 0:
+                self.current_page -= 1
+                self.update_buttons()
+                await interaction.response.edit_message(
+                    embed=self.pages[self.current_page], view=self
+                )
+
+        @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+        async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.current_page < len(self.pages) - 1:
+                self.current_page += 1
+                self.update_buttons()
+                await interaction.response.edit_message(
+                    embed=self.pages[self.current_page], view=self
+                )
+
+        async def on_timeout(self):
+            """Disable all buttons when the view times out."""
+            for item in self.children:
+                item.disabled = True
+
+    async def create_relay_pages(
+        guild_id: int, channels_data: dict, title_prefix: str, description: str
+    ) -> List[discord.Embed]:
+        """Create paginated embeds for relay data.
+
+        Args:
+            guild_id: The guild ID
+            channels_data: Dict mapping discord channel IDs to lists of YouTube channel IDs
+            title_prefix: Prefix for embed titles
+            description: Description for the embeds
+
+        Returns:
+            List of Discord embeds for pagination
+        """
+        if not channels_data:
+            embed = discord.Embed(
+                title=f"{title_prefix} - No Relays",
+                description="No YouTube channels are being relayed in the specified scope.",
+                color=discord.Color.blue(),
+            )
+            embed.add_field(
+                name="How to add",
+                value="Use `/relay add` in a channel and type at least 2 characters of a VTuber name to see autocomplete suggestions",
+                inline=False,
+            )
+            return [embed]
+
+        pages = []
+        channels_per_page = 5
+        current_page_channels = 0
+        current_embed = None
+
+        for discord_channel_id, youtube_channels in channels_data.items():
+            # Create new embed if needed
+            if current_embed is None or current_page_channels >= channels_per_page:
+                if current_embed is not None:
+                    pages.append(current_embed)
+
+                page_num = len(pages) + 1
+                current_embed = discord.Embed(
+                    title=f"{title_prefix} (Page {page_num})",
+                    description=description,
+                    color=discord.Color.blue(),
+                )
+                current_page_channels = 0
+
+            # Get channel name for Discord channel
+            try:
+                discord_channel = bot.get_channel(int(discord_channel_id))
+                channel_name = (
+                    f"#{discord_channel.name}" if discord_channel else f"<#{discord_channel_id}>"
+                )
+            except:
+                channel_name = f"<#{discord_channel_id}>"
+
+            # Format YouTube channels list
+            youtube_channel_lines = []
+            for i, youtube_id in enumerate(
+                youtube_channels[:10], 1
+            ):  # Limit to 10 per Discord channel
+                # Try to get channel info from cache
+                channel_info = bot.holodex_manager.channel_cache.get_channel_by_id(youtube_id)
+                if channel_info:
+                    channel_display = f"**{channel_info.get('name', youtube_id)}**"
+                else:
+                    channel_display = f"`{youtube_id}`"
+
+                youtube_channel_lines.append(f"{i}. {channel_display}")
+
+            if len(youtube_channels) > 10:
+                youtube_channel_lines.append(f"... and {len(youtube_channels) - 10} more")
+
+            field_value = (
+                "\n".join(youtube_channel_lines) if youtube_channel_lines else "No channels"
+            )
+            current_embed.add_field(name=f"📺 {channel_name}", value=field_value, inline=False)
+            current_page_channels += 1
+
+        # Add the last embed if it exists
+        if current_embed is not None:
+            pages.append(current_embed)
+
+        # Update page numbers in titles if multiple pages
+        if len(pages) > 1:
+            for i, page in enumerate(pages, 1):
+                page.title = f"{title_prefix} (Page {i}/{len(pages)})"
+                page.set_footer(
+                    text=f"Use `/relay add` in a channel to add new relays • Page {i}/{len(pages)}"
+                )
+        else:
+            pages[0].title = title_prefix
+            pages[0].set_footer(text="Use `/relay add` in a channel to add new relays")
+
+        return pages
+
+    @relay_group.command(
+        name="list-guild",
+        description="List all YouTube channel relays for the entire server",
     )
-    @app_commands.describe(channel_id="The YouTube channel name or ID to blacklist")
-    @app_commands.autocomplete(channel_id=channel_autocomplete)
-    @discord.app_commands.default_permissions(manage_messages=True)
-    async def blacklist_vtuber(interaction: discord.Interaction, channel_id: str):
-        """Blacklist a VTuber.
+    async def relay_list_guild(interaction: discord.Interaction):
+        """List all YouTube channel relays for the entire guild.
 
         Args:
             interaction: The Discord interaction
-            username: The VTuber to blacklist
         """
+        await interaction.response.defer(ephemeral=True)
+
         if not interaction.guild:
-            await interaction.response.send_message(
-                "This command can only be used in a server", ephemeral=True
+            await interaction.followup.send(
+                "This command can only be used in a server.", ephemeral=True
             )
             return
 
-        channel_info = await bot.holodex_manager.api.get_channel_info(channel_id)
-        username = channel_info["name"]
+        # Get all relay configurations for this guild
+        all_relay_channels = bot.config.get_relay_channels(interaction.guild.id)
 
-        # Use the username directly without any modifications
-        # Check if already blacklisted
-        if bot.config.is_user_blacklisted(interaction.guild.id, username):
-            await interaction.response.send_message(
-                f"**{username}** is already blacklisted", ephemeral=True
-            )
-            return
+        # Reorganize data by Discord channel for better display
+        channels_data = {}
+        for youtube_id, discord_channel_ids in all_relay_channels.items():
+            for discord_channel_id in discord_channel_ids:
+                if discord_channel_id not in channels_data:
+                    channels_data[discord_channel_id] = []
+                channels_data[discord_channel_id].append(youtube_id)
 
-        # Add to blacklist
-        success = bot.config.add_blacklisted_user(interaction.guild.id, username)
+        # Create paginated embeds
+        pages = await create_relay_pages(
+            interaction.guild.id,
+            channels_data,
+            f"🌐 All Server Relays - {interaction.guild.name}",
+            f"All YouTube channel relays across the entire server ({len(channels_data)} channels with relays)",
+        )
 
-        if success:
-            await interaction.response.send_message(
-                f"✅ **{username}** has been added to the blacklist.\n"
-                f"Their messages will no longer be relayed in this server.",
-                ephemeral=True,
-            )
-            logger.info(
-                f"User {interaction.user} blacklisted VTuber {username} "
-                f"in guild {interaction.guild.name} ({interaction.guild.id})"
-            )
+        # Send with pagination if multiple pages
+        if len(pages) > 1:
+            view = RelayListView(pages)
+            await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
         else:
-            await interaction.response.send_message(
-                f"Failed to blacklist **{username}**", ephemeral=True
+            await interaction.followup.send(embed=pages[0], ephemeral=True)
+
+    @relay_group.command(
+        name="list-category",
+        description="List all YouTube channel relays for channels in the current category",
+    )
+    async def relay_list_category(interaction: discord.Interaction):
+        """List all YouTube channel relays for channels in the current category.
+
+        Args:
+            interaction: The Discord interaction
+        """
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild or not isinstance(
+            interaction.channel, (discord.TextChannel, discord.Thread)
+        ):
+            await interaction.followup.send(
+                "This command can only be used in a server text channel or thread.", ephemeral=True
             )
+            return
+
+        # Get the category of the current channel
+        current_channel = interaction.channel
+        if isinstance(current_channel, discord.Thread):
+            current_channel = current_channel.parent
+
+        category = current_channel.category
+        category_name = category.name if category else "Uncategorized"
+
+        # Get all channels in the same category
+        if category:
+            category_channels = category.channels
+        else:
+            # Get all uncategorized channels
+            category_channels = [
+                ch
+                for ch in interaction.guild.channels
+                if isinstance(
+                    ch,
+                    (
+                        discord.TextChannel,
+                        discord.VoiceChannel,
+                        discord.StageChannel,
+                        discord.ForumChannel,
+                    ),
+                )
+                and ch.category_id is None
+            ]
+
+        # Get all relay configurations for the guild
+        all_relay_channels = bot.config.get_relay_channels(interaction.guild.id)
+
+        # Filter for only channels in this category that have relays
+        channels_data = {}
+        for youtube_id, discord_channel_ids in all_relay_channels.items():
+            for discord_channel_id in discord_channel_ids:
+                discord_channel_id_int = int(discord_channel_id)
+                # Check if this Discord channel is in our category
+                if any(ch.id == discord_channel_id_int for ch in category_channels):
+                    if discord_channel_id not in channels_data:
+                        channels_data[discord_channel_id] = []
+                    channels_data[discord_channel_id].append(youtube_id)
+
+        # Create paginated embeds
+        pages = await create_relay_pages(
+            interaction.guild.id,
+            channels_data,
+            f"📁 Category Relays - {category_name}",
+            f"YouTube channel relays in the '{category_name}' category ({len(channels_data)} channels with relays)",
+        )
+
+        # Send with pagination if multiple pages
+        if len(pages) > 1:
+            view = RelayListView(pages)
+            await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=pages[0], ephemeral=True)
+
+    # Add the relay group to the command tree with proper permissions
+    relay_group.default_permissions = discord.Permissions(manage_messages=True)
+    bot.tree.add_command(relay_group)
