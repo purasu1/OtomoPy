@@ -98,25 +98,36 @@ otomopy
 
 By default, all slash commands require manage messages permissions. This can be adjusted on a per-guild basis in the server integration settings.
 
-#### `/relay <channel_id>`
+#### `/relay add <channel_id>`
 Add a YouTube channel to monitor for the current Discord channel.
 - Auto-completes channel names
 
-#### `/unrelay <channel_id>`
+#### `/relay remove <channel_id>`
 Remove a YouTube channel from monitoring for the current Discord channel.
 - Auto-completes channel names
 
-#### `/relays`
+#### `/relay list`
 List all configured channel relays for the current Discord channel.
 
-#### `/blacklist_translator <username>`
+#### `/relay list-category`
+List all configured channel relays for channels in the current category.
+
+#### `/relay list-guild`
+List all configured channel relays for channels in the current guild.
+
+#### `/blacklist translator <username>`
 Add a translator to the blacklist for the current guild.
 
-#### `/unblacklist_translator <username>`
-Remove a translator from the blacklist for the current guild.
+#### `/blacklist vtuber <username>`
+Add a vtuber to the blacklist for the current guild.
+- Auto-completes channel names
 
-#### `/list_blacklisted`
-Show all blacklisted translators for the current guild.
+#### `/blacklist remove <username>`
+Remove a translator or vtuber from the blacklist for the current guild.
+- Autocompletes usernames
+
+#### `/blacklist list`
+Show all blacklisted translators or vtubers for the current guild.
 
 ## How It Works
 
