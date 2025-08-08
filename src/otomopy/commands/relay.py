@@ -438,6 +438,7 @@ def register_commands(bot):
         Args:
             interaction: The Discord interaction
         """
+        logging.info("Listing relays for category")
         await interaction.response.defer(ephemeral=True)
 
         if not interaction.guild or not isinstance(
@@ -452,42 +453,31 @@ def register_commands(bot):
         current_channel = interaction.channel
         if isinstance(current_channel, discord.Thread):
             current_channel = current_channel.parent
+        if current_channel is None:
+            await interaction.followup.send(
+                "This command can only be used in a server text channel or thread.", ephemeral=True
+            )
+            return
 
         category = current_channel.category
         category_name = category.name if category else "Uncategorized"
+        category_id = category.id if category else None
 
-        # Get all channels in the same category
-        if category:
-            category_channels = category.channels
-        else:
-            # Get all uncategorized channels
-            category_channels = [
-                ch
-                for ch in interaction.guild.channels
-                if isinstance(
-                    ch,
-                    (
-                        discord.TextChannel,
-                        discord.VoiceChannel,
-                        discord.StageChannel,
-                        discord.ForumChannel,
-                    ),
-                )
-                and ch.category_id is None
-            ]
-
-        # Get all relay configurations for the guild
-        all_relay_channels = bot.config.get_relay_channels(interaction.guild.id)
-
-        # Filter for only channels in this category that have relays
+        # Collect all channels or threads with existing relays on the guild
+        relay_channels = bot.config.get_relay_channels(interaction.guild.id)
         channels_data = {}
-        for youtube_id, discord_channel_ids in all_relay_channels.items():
+        for youtube_id, discord_channel_ids in relay_channels.items():
             for discord_channel_id in discord_channel_ids:
-                discord_channel_id_int = int(discord_channel_id)
-                # Check if this Discord channel is in our category
-                if any(ch.id == discord_channel_id_int for ch in category_channels):
-                    if discord_channel_id not in channels_data:
-                        channels_data[discord_channel_id] = []
+                channel = interaction.guild.get_channel_or_thread(int(discord_channel_id))
+                if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+                    logging.warning(f"Channel {discord_channel_id} is not a text channel or thread")
+                    continue
+                if channel is None:
+                    continue
+                if isinstance(channel, discord.Thread) and channel.parent is not None:
+                    channel = channel.parent
+                if channel.category_id == category_id:
+                    channels_data[discord_channel_id] = []
                     channels_data[discord_channel_id].append(youtube_id)
 
         # Create paginated embeds
