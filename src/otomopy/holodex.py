@@ -316,7 +316,7 @@ class HolodexManager:
             cache_dir: Directory to store the channel cache. If empty, uses the current directory.
         """
         self.api = HolodexAPI(api_key)
-        self.current_streams: dict[str, StreamEvent] = {}  # video_id -> StreamEvent
+        self.current_streams: dict[str, StreamEvent] | None = None  # video_id -> StreamEvent
         self.active_subscriptions: set[str] = set()  # Set of video_ids currently subscribed to
         self.running = False
         self.update_interval = 300  # seconds
@@ -335,7 +335,6 @@ class HolodexManager:
 
         # Stream event skip tracking
         self.initialization_complete_time: float | None = None
-        self.stream_event_skip_duration: int = 30
 
         # Channel cache
         if not cache_dir:
@@ -370,9 +369,7 @@ class HolodexManager:
 
         # Mark initialization as complete
         self.initialization_complete_time = time.time()
-        logger.info(
-            f"Channel cache initialization complete. Stream events will be skipped for {self.stream_event_skip_duration} seconds."
-        )
+        logger.info(f"Channel cache initialization complete.")
 
         # Start WebSocket connection (only if not already connected)
         if not self.ws_task or self.ws_task.done():
@@ -445,26 +442,6 @@ class HolodexManager:
             self.channel_cache.update_cache(existing_channels)
         else:
             logger.error("Failed to fetch channels from Holodex API and no cache exists")
-
-    def should_skip_stream_events(self) -> bool:
-        """Check if stream events should be skipped based on initialization time.
-
-        Returns:
-            bool: True if stream events should be skipped, False otherwise
-        """
-        if self.initialization_complete_time is None:
-            return True  # Skip if initialization hasn't completed yet
-
-        elapsed_time = time.time() - self.initialization_complete_time
-        return elapsed_time < self.stream_event_skip_duration
-
-    def set_stream_event_skip_duration(self, duration: int):
-        """Set the duration to skip stream events after initialization.
-
-        Args:
-            duration: Duration in seconds to skip stream events
-        """
-        self.stream_event_skip_duration = duration
 
     async def stop(self):
         """Stop the Holodex stream tracking."""
@@ -545,6 +522,9 @@ class HolodexManager:
         Args:
             removed_channels: Set of channel IDs that were removed from tracking
         """
+        if self.current_streams is None:
+            return
+
         # Find streams that belong to removed channels
         streams_to_remove = []
         for video_id, stream in self.current_streams.items():
@@ -671,7 +651,7 @@ class HolodexManager:
             await asyncio.sleep(0.1)  # Small delay between subscriptions
 
         # Also check for any streams we might have missed while disconnected
-        if hasattr(self, "stream_callback") and hasattr(self, "current_streams"):
+        if hasattr(self, "stream_callback") and self.current_streams is not None:
             for video_id, event in self.current_streams.items():
                 if (
                     event.status in ["live", "upcoming"]
@@ -830,6 +810,8 @@ class HolodexManager:
 
     async def _handle_chat_event(self, event_name: str, event_data: dict):
         """Handle chat message events for a specific video."""
+        if self.current_streams is None:
+            return
         video_id = event_name.split("/")[0]
         logger.debug(f"Processing chat event for video {video_id}: {event_name}")
 
@@ -973,14 +955,17 @@ class HolodexManager:
         for video_id, event in current_streams.items():
             # If this is a new stream or the status has changed
             if (
-                video_id not in self.current_streams
+                self.current_streams is None
+                or video_id not in self.current_streams
                 or self.current_streams[video_id].status != event.status
             ):
                 logger.info(
                     f"Stream change detected: {event.channel_name} - {event.title} - {event.status}"
                 )
                 # Don't process streams that are upcoming and more than 24 hours away
-                if event.status != "upcoming" or not self._is_stream_more_than_24h_away(event):
+                if self.current_streams is not None and (
+                    event.status != "upcoming" or not self._is_stream_more_than_24h_away(event)
+                ):
                     # Call the callback with the event
                     await self.stream_callback(event)
 
@@ -999,12 +984,13 @@ class HolodexManager:
                         )
 
         # Check for ended streams and unsubscribe from their chats
-        for video_id in list(self.current_streams.keys()):
-            if video_id not in current_streams:
-                # Stream has ended or is no longer tracked
-                logger.info(f"Stream ended or no longer tracked: {video_id}")
-                if video_id in self.active_subscriptions:
-                    await self._unsubscribe_from_chat(video_id)
+        if self.current_streams is not None:
+            for video_id in list(self.current_streams.keys()):
+                if video_id not in current_streams:
+                    # Stream has ended or is no longer tracked
+                    logger.info(f"Stream ended or no longer tracked: {video_id}")
+                    if video_id in self.active_subscriptions:
+                        await self._unsubscribe_from_chat(video_id)
 
         # Update our stored state
         self.current_streams = current_streams
