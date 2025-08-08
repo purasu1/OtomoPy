@@ -45,7 +45,7 @@ class HolodexAPI:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def get_live_streams(self, channel_ids: set[str]) -> list[dict[str, Any]]:
+    async def get_live_streams(self, channel_ids: set[str]) -> list[dict[str, Any]] | None:
         """Get live streams for the specified channels.
 
         Args:
@@ -98,7 +98,7 @@ class HolodexAPI:
                     return []
         except Exception:
             logger.exception("Exception fetching live streams:")
-            return []
+            return None
 
     async def get_channel_info(self, channel_id: str) -> dict[str, Any] | None:
         """Get information about a specific channel.
@@ -953,6 +953,10 @@ class HolodexManager:
 
         # Fetch current live/upcoming streams from Holodex
         live_data = await self.api.get_live_streams(tracked_channels)
+        if live_data is None:
+            logger.error("Failed to fetch live streams from Holodex API")
+            return
+
         logger.debug(f"Fetched {len(live_data)} live/upcoming streams from Holodex API")
 
         # Convert to StreamEvent objects
