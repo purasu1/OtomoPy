@@ -505,10 +505,13 @@ class HolodexManager:
     async def get_channel(self, name: str) -> dict[str, Any] | None:
         if name.startswith("@"):
             # This is a handle
+            logger.info(f"Fetching channel info for handle {name}")
             channel = self.channel_cache.get_channel_by_handle(name)
             if channel is None:
+                logger.info(f"Handle {name} not found in cache, fetching from API")
                 channel = await self.api.get_handle_info(name)
                 if channel is None:
+                    logger.info(f"API did not return a channel for handle {name}")
                     return None
                 self.channel_cache._channel_by_handle[name] = channel
 
