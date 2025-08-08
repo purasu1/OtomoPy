@@ -179,8 +179,12 @@ class DiscordBot(discord.Client):
                     channel = self.get_channel(
                         int(discord_channel_id_str)
                     )  # Send the embed to the Discord channel
-                    if isinstance(channel, discord.TextChannel):
-                        await channel.send(embed=embed)
+                    if not isinstance(channel, discord.TextChannel | discord.Thread):
+                        logging.warning(
+                            f"Channel {discord_channel_id_str} is not a text channel or thread"
+                        )
+                        continue
+                    await channel.send(embed=embed)
 
     async def _format_stream_event(self, event: StreamEvent) -> discord.Embed:
         # Create an embed for the event
@@ -258,7 +262,10 @@ class DiscordBot(discord.Client):
                 try:
                     # Get the Discord channel
                     channel = self.get_channel(int(discord_channel_id_str))
-                    if not channel or not isinstance(channel, discord.TextChannel):
+                    if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
+                        logging.warning(
+                            f"Channel {discord_channel_id_str} is not a text channel or thread"
+                        )
                         continue
 
                     # Send the message to the Discord channel
