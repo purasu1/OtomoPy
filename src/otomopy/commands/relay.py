@@ -335,15 +335,6 @@ def register_commands(bot):
                 )
                 current_page_channels = 0
 
-            # Get channel name for Discord channel
-            try:
-                discord_channel = bot.get_channel(int(discord_channel_id))
-                channel_name = (
-                    f"#{discord_channel.name}" if discord_channel else f"<#{discord_channel_id}>"
-                )
-            except:
-                channel_name = f"<#{discord_channel_id}>"
-
             # Format YouTube channels list
             youtube_channel_lines = []
             for i, youtube_id in enumerate(
@@ -364,7 +355,9 @@ def register_commands(bot):
             field_value = (
                 "\n".join(youtube_channel_lines) if youtube_channel_lines else "No channels"
             )
-            current_embed.add_field(name=f"📺 {channel_name}", value=field_value, inline=False)
+            current_embed.add_field(
+                name=f"<#{discord_channel_id}>", value=field_value, inline=False
+            )
             current_page_channels += 1
 
         # Add the last embed if it exists
