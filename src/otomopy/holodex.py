@@ -504,6 +504,7 @@ class HolodexManager:
 
     async def get_channel(self, name: str) -> dict[str, Any] | None:
         if name.startswith("@"):
+            name = name.lower()
             # This is a handle
             logger.info(f"Fetching channel info for handle {name}")
             channel = self.channel_cache.get_channel_by_handle(name)
