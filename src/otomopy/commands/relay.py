@@ -470,7 +470,8 @@ def register_commands(bot):
                 if isinstance(channel, discord.Thread) and channel.parent is not None:
                     channel = channel.parent
                 if channel.category_id == category_id:
-                    channels_data[discord_channel_id] = []
+                    if discord_channel_id not in channels_data:
+                        channels_data[discord_channel_id] = []
                     channels_data[discord_channel_id].append(youtube_id)
 
         # Create paginated embeds
