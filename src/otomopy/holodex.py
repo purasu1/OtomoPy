@@ -320,7 +320,7 @@ class HolodexManager:
         self.active_subscriptions: set[str] = set()  # Set of video_ids currently subscribed to
         self.running = False
         self.update_interval = 300  # seconds
-        self.sync_offset_seconds = 5  # seconds after interval boundary to sync
+        self.sync_offset_seconds = 30  # seconds after interval boundary to sync
         self.api_key = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
         self.channel_handles: dict[str, Any] = {}  # Cache of channel info by handle
