@@ -52,7 +52,6 @@ class WebhookManager:
             # Store webhook in nested dictionary
             self._store_webhook(channel, webhook)
 
-            logger.info(f"Created new webhook in channel {channel.id}")
             return webhook
 
         except discord.HTTPException:
@@ -70,9 +69,11 @@ class WebhookManager:
         # Check if there's already a webhook with this name
         for webhook in await channel.webhooks():
             if webhook.name == webhook_name:
+                logger.info(f"Found existing webhook in channel {channel.id}")
                 return webhook
 
         # Create new webhook if not found
+        logger.info(f"Creating new webhook in channel {channel.id}")
         return await channel.create_webhook(
             name=webhook_name, reason=f"Relay VTuber messages in {channel.name}"
         )
