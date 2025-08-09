@@ -58,7 +58,7 @@ class HolodexAPI:
 
         if not channel_ids:
             logger.debug("No channel IDs provided to get_live_streams")
-            return []
+            return None
 
         try:
             # Use the /users/live endpoint which is more efficient for our use case
@@ -71,7 +71,7 @@ class HolodexAPI:
 
             if self.session is None:
                 logger.error("Session is None in get_live_streams")
-                return []
+                return None
 
             url = f"{self.BASE_URL}/users/live"
             logger.debug(f"Making request to: {url}")
@@ -90,12 +90,12 @@ class HolodexAPI:
                     else:
                         logger.info("No live/upcoming streams found in API response")
 
-                    return data if data is not None else []
+                    return data if data else None
                 else:
                     response_text = await response.text()
                     logger.error(f"Error fetching live streams: {response.status}")
                     logger.error(f"Response text: {response_text[:500]}...")  # First 500 chars
-                    return []
+                    return None
         except Exception:
             logger.exception("Exception fetching live streams:")
             return None
