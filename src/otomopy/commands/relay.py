@@ -180,7 +180,6 @@ def register_commands(bot):
         Args:
             interaction: The Discord interaction
         """
-        # Defer the response since this might take time if there are many channels
         await interaction.response.defer(ephemeral=True)
 
         if not interaction.guild or not isinstance(
@@ -194,57 +193,28 @@ def register_commands(bot):
         # Get relay configurations for this Discord channel
         relay_channels = bot.config.get_relay_channels(interaction.guild.id, interaction.channel.id)
 
-        if not relay_channels:
-            embed = discord.Embed(
-                title="Channel Relays",
-                description="No YouTube channels are being relayed to this Discord channel.",
-                color=discord.Color.blue(),
-            )
-            embed.add_field(
-                name="How to add",
-                value="Use `/relay add` and type at least 2 characters of a VTuber name to see autocomplete suggestions",
-                inline=False,
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            return
+        # Reorganize data to match the format expected by create_relay_pages
+        channels_data = {}
+        if relay_channels:
+            channels_data[str(interaction.channel.id)] = list(relay_channels.keys())
 
-        # Create an embed for the list
-        embed = discord.Embed(
-            title="YouTube Channel Relays",
-            description=f"The following channels are being relayed to <#{interaction.channel.id}>",
-            color=discord.Color.blue(),
+        # Get channel name for display
+        channel_name = f"<#{interaction.channel.id}>"
+
+        # Create paginated embeds using the unified function
+        pages = await create_relay_pages(
+            interaction.guild.id,
+            channels_data,
+            f"📺 Channel Relays - {channel_name}",
+            f"YouTube channel relays for {channel_name} ({len(relay_channels)} relays)",
         )
 
-        # Add each channel as a field
-        for i, youtube_id in enumerate(relay_channels.keys(), 1):
-            # Try to get channel info from cache
-            channel_info = bot.holodex_manager.channel_cache.get_channel_by_id(youtube_id)
-
-            if channel_info:
-                channel_name = channel_info.get("name", youtube_id)
-                channel_type = channel_info.get("type", "Unknown")
-
-                # Format the field content
-                field_value = f"ID: `{youtube_id}`\nType: {channel_type}"
-
-                # Set a thumbnail for the first channel in the list
-                if i == 1 and channel_info.get("photo"):
-                    embed.set_thumbnail(url=channel_info.get("photo"))
-
-                embed.add_field(name=f"{i}. {channel_name}", value=field_value, inline=True)
-            else:
-                embed.add_field(
-                    name=f"{i}. Unknown Channel",
-                    value=f"ID: `{youtube_id}`",
-                    inline=True,
-                )
-
-        # Add a footer with a hint
-        embed.set_footer(
-            text="Use `/relay remove` and type at least 2 characters of a VTuber name to see autocomplete suggestions"
-        )
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        # Send with pagination if multiple pages
+        if len(pages) > 1:
+            view = RelayListView(pages)
+            await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=pages[0], ephemeral=True)
 
     class RelayListView(discord.ui.View):
         """View for paginated relay list display."""
