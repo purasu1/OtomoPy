@@ -319,7 +319,7 @@ class HolodexManager:
         self.current_streams: dict[str, StreamEvent] | None = None  # video_id -> StreamEvent
         self.active_subscriptions: set[str] = set()  # Set of video_ids currently subscribed to
         self.running = False
-        self.update_interval = 300  # seconds
+        self.update_interval = 60  # seconds
         self.sync_offset_seconds = 30  # seconds after interval boundary to sync
         self.api_key = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
