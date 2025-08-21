@@ -235,6 +235,7 @@ class StreamEvent:
     status: str  # live, upcoming, ended
     start_time: str | None
     live_viewers: int | None
+    members_only: bool
 
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> "StreamEvent":
@@ -246,6 +247,7 @@ class StreamEvent:
         Returns:
             StreamEvent object
         """
+        topic = data["topic_id"].lower()
         return cls(
             video_id=data["id"],
             channel_id=data["channel"]["id"],
@@ -255,6 +257,7 @@ class StreamEvent:
             status=data["status"],
             start_time=data.get("start_scheduled") or data.get("start_actual"),
             live_viewers=data.get("live_viewers"),
+            members_only="membersonly" in topic,
         )
 
 
@@ -659,6 +662,7 @@ class HolodexManager:
             for video_id, event in self.current_streams.items():
                 if (
                     event.status in ["live", "upcoming"]
+                    and not event.members_only
                     and video_id not in self.active_subscriptions
                 ):
                     logger.info(f"Re-subscribing to missed stream: {video_id}")
@@ -973,9 +977,10 @@ class HolodexManager:
                     # Call the callback with the event
                     await self.stream_callback(event)
 
-                # If the stream is live or upcoming, subscribe to its chat
+                # If the stream is live or upcoming and NOT members-only, subscribe to its chat
                 if (
                     event.status in ["live", "upcoming"]
+                    and not event.members_only
                     and video_id not in self.active_subscriptions
                 ):
                     logger.info(f"Subscribing to chat for {event.status} stream: {event.video_id}")
@@ -986,6 +991,13 @@ class HolodexManager:
                         logger.warning(
                             f"WebSocket not connected, will retry subscription for {video_id} later"
                         )
+
+                # If a previously subscribed stream is now members-only, unsubscribe from it
+                if event.members_only and video_id in self.active_subscriptions:
+                    logger.info(
+                        f"Stream {event.video_id} is now members-only, unsubscribing from chat"
+                    )
+                    await self._unsubscribe_from_chat(video_id)
 
         # Check for ended streams and unsubscribe from their chats
         if self.current_streams is not None:
