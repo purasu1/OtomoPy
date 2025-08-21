@@ -247,7 +247,7 @@ class StreamEvent:
         Returns:
             StreamEvent object
         """
-        topic = data["topic_id"].lower()
+        topic = data.get("topic_id", "").lower()
         return cls(
             video_id=data["id"],
             channel_id=data["channel"]["id"],
