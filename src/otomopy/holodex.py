@@ -975,7 +975,10 @@ class HolodexManager:
                     event.status != "upcoming" or not self._is_stream_more_than_24h_away(event)
                 ):
                     # Call the callback with the event
-                    await self.stream_callback(event)
+                    try:
+                        await self.stream_callback(event)
+                    except Exception as e:
+                        logger.error(f"Error calling stream callback: {e}")
 
                 # If the stream is live or upcoming and NOT members-only, subscribe to its chat
                 if (
