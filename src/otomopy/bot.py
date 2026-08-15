@@ -10,7 +10,6 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import discord
 from discord import app_commands
@@ -22,7 +21,8 @@ from otomopy.webhook_manager import WebhookManager
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(pathname)s:%(lineno)d - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(pathname)s:%(lineno)d - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,11 @@ class DotEnvConfig:
     owner_id: int
     config_file: str
     holodex_api_key: str
+    translation_backend: str
     deepl_api_key: str | None
+    azure_translator_key: str | None
+    azure_translator_region: str | None
+    azure_translator_endpoint: str | None
 
     @classmethod
     def load_env(cls) -> DotEnvConfig:
@@ -62,9 +66,23 @@ class DotEnvConfig:
                 "No Holodex API key found. Please add HOLODEX_API_KEY to your .env file"
             )
 
+        translation_backend = os.getenv("TRANSLATION_BACKEND", "deepl")
         deepl_api_key = os.getenv("DEEPL_API_KEY")
+        azure_translator_key = os.getenv("AZURE_TRANSLATOR_KEY")
+        azure_translator_region = os.getenv("AZURE_TRANSLATOR_REGION")
+        azure_translator_endpoint = os.getenv("AZURE_TRANSLATOR_ENDPOINT")
 
-        return cls(token, owner_id, config_file, holodex_api_key, deepl_api_key)
+        return cls(
+            token,
+            owner_id,
+            config_file,
+            holodex_api_key,
+            translation_backend,
+            deepl_api_key,
+            azure_translator_key,
+            azure_translator_region,
+            azure_translator_endpoint,
+        )
 
 
 class DiscordBot(discord.Client):
@@ -96,17 +114,23 @@ class DiscordBot(discord.Client):
         self.tracked_channels: set[str] = set()
         self.holodex_task = None
 
-        # DeepL integration
-        self.deepl = None
-        if dotenv.deepl_api_key:
+        # Translation integration
+        self.translator = None
+        if dotenv.translation_backend == "deepl" and dotenv.deepl_api_key:
             try:
-                from deepl import DeepLClient  # pyright: ignore
+                from otomopy.translation.base import DeepLProvider
+
+                self.translator = DeepLProvider(dotenv.deepl_api_key)
             except ImportError:
-                logger.warning(
-                    "DeepL API key provided, but deepl package is not installed. Disabling translation."
-                )
-            else:
-                self.deepl = DeepLClient(dotenv.deepl_api_key)
+                logger.warning("DeepL package is not installed. Disabling translation.")
+        elif dotenv.translation_backend == "azure" and dotenv.azure_translator_key:
+            from otomopy.translation.base import AzureProvider
+
+            self.translator = AzureProvider(
+                dotenv.azure_translator_key,
+                dotenv.azure_translator_region,
+                dotenv.azure_translator_endpoint,
+            )
 
     async def setup_hook(self):
         """Set up the bot and synchronize commands."""
@@ -209,7 +233,8 @@ class DiscordBot(discord.Client):
 
         # Add debug logging for every message
         logger.debug(
-            f"Received chat message #{self.holodex_chat_messages_received}: {message.author} - {message.message}"
+            f"Received chat message #{self.holodex_chat_messages_received}: "
+            f"{message.author} - {message.message}"
         )
         logger.debug(f"Message details: {message}")
 
@@ -220,7 +245,8 @@ class DiscordBot(discord.Client):
         # Log every 10th message to avoid flooding logs at INFO level
         if self.holodex_chat_messages_received % 10 == 0:
             logger.info(
-                f"Chat messages received: {self.holodex_chat_messages_received}, Latest: {message.author} - {message.message}"
+                f"Chat messages received: {self.holodex_chat_messages_received}, "
+                f"Latest: {message.author} - {message.message}"
             )
 
         formatted_message = await self._format_message(message)
@@ -282,18 +308,9 @@ class DiscordBot(discord.Client):
         return "\n".join(content_parts)
 
     async def tl_message(self, message: str) -> str | None:
-        if self.deepl:
+        if self.translator:
             try:
-                result = self.deepl.translate_text(message, target_lang="EN-GB")
-                if isinstance(result, list):
-                    raise ValueError("Only a single translation result was expected")
-                # Only return the translation if the detected source language isn't English,
-                # and the translation differs from the original message.
-                if (
-                    result.detected_source_lang != "EN"
-                    and result.text.lower().strip() != message.lower().strip()
-                ):
-                    return result.text.replace("`", "''")
+                return await self.translator.translate(message, target_lang="en")
             except Exception:
                 logger.exception("Error translating message:")
         return None
@@ -331,8 +348,10 @@ class DiscordBot(discord.Client):
 
         message_translation = await self.tl_message(clean_message)
         if message_translation:
-            deepl_icon = self.config.get_emote("DeepL", "**DeepL:**")
-            content_parts.append(f"{deepl_icon} `{message_translation}`")
+            # Use the backend name as a fallback if no specific emote is configured
+            backend_name = self.translator.name if self.translator else "Translation"
+            icon = self.config.get_emote(backend_name, f"**{backend_name}:**")
+            content_parts.append(f"{icon} `{message_translation}`")
 
         message_channel = self.holodex_manager.channel_cache.get_channel_by_id(message.channel_id)
         if message_channel is None:
@@ -347,7 +366,8 @@ class DiscordBot(discord.Client):
             guild_id = int(guild_id_str)
             if self.config.is_user_blacklisted(guild_id, message_author_channel["name"]):
                 logger.debug(
-                    f"Skipping message from blacklisted VTuber {message_author_channel['name']} in guild {guild_id}"
+                    f"Skipping message from blacklisted VTuber {message_author_channel['name']} "
+                    f"in guild {guild_id}"
                 )
                 continue
 
@@ -407,7 +427,7 @@ def main():
         logger.info(f"Owner ID: {dotenv.owner_id}")
 
     # Import commands here to avoid circular imports
-    from otomopy.commands import blacklist, relay, system, emotes
+    from otomopy.commands import blacklist, emotes, relay, system
 
     # Register commands with permission checking enforcement
     blacklist.register_commands(bot)

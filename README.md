@@ -10,7 +10,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - **Channel Management**: Add/remove YouTube channels to monitor per Discord server
 - **Translation Blacklist**: Filter out specific translators or chat messages
 - **Multi-Server Support**: Configure different settings for each Discord server
-- **DeepL Translation**: Automatic DeepL translation of VTuber messages
+- **Chat Translation**: Automatic translation of VTuber messages via DeepL or Azure AI Translator
 
 ## Requirements
 
@@ -18,7 +18,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - Discord Bot Token
 - Holodex API Key
 - Discord server with appropriate permissions
-- Optionally, a DeepL API key
+- Optionally, a DeepL API key or an Azure Translator key/region
 
 ## Installation
 
@@ -40,8 +40,13 @@ DISCORD_TOKEN=your_discord_bot_token_here
 OWNER_ID=your_discord_user_id_here
 CONFIG_FILE=config.json
 HOLODEX_API_KEY=your_holodex_api_key_here
-# Optional:
+# Optional (choose a translation backend; "deepl" is the default):
+TRANSLATION_BACKEND=deepl
 DEEPL_API_KEY=your_deepl_api_key_here
+# Or, to use Azure AI Translator instead:
+# TRANSLATION_BACKEND=azure
+# AZURE_TRANSLATOR_KEY=your_azure_translator_key_here
+# AZURE_TRANSLATOR_REGION=your_azure_resource_region_here
 ```
 
 ## Configuration
@@ -59,6 +64,45 @@ DEEPL_API_KEY=your_deepl_api_key_here
 3. Click your profile icon in the top right corner and select "Account Settings"
 4. Scroll down and click on "GET NEW API KEY"
 5. Add the API key to your `.env` file
+
+### Translation (Optional)
+
+The bot can translate live chat messages that aren't already in English. Set
+`TRANSLATION_BACKEND` to `deepl` (the default) or `azure`, and provide the
+corresponding API key(s) below. If no key is configured, translation is
+disabled.
+
+#### DeepL
+
+1. Sign up at [DeepL](https://www.deepl.com/pro-api) and create an API key
+   from your account page
+2. Set `DEEPL_API_KEY` in your `.env` file
+
+#### Azure AI Translator
+
+1. Sign in to the [Azure Portal](https://portal.azure.com/)
+2. Click "Create a resource" and search for **Translator** (under "AI +
+   Machine Learning" / "Azure AI services")
+3. Create the resource:
+   - Pick a **Subscription** and **Resource group** (create a new resource
+     group if you don't have one)
+   - Pick a **Region** — this becomes `AZURE_TRANSLATOR_REGION`. If you
+     select "Global", no region header is required and you can leave
+     `AZURE_TRANSLATOR_REGION` unset
+   - Choose a **Name** and the **Free F0** pricing tier if you just want to
+     try it out (paid **S1** tier otherwise); free tier limits are generous
+     for a chat relay bot
+4. Once deployed, go to the resource's **"Keys and Endpoint"** page (under
+   "Resource Management")
+5. Copy **KEY 1** (or KEY 2) into `AZURE_TRANSLATOR_KEY` and the **Location/Region**
+   value into `AZURE_TRANSLATOR_REGION`
+6. Leave `AZURE_TRANSLATOR_ENDPOINT` unset unless you're using a custom or
+   sovereign-cloud endpoint — the bot defaults to the standard global
+   endpoint (`https://api.cognitive.microsofttranslator.com`)
+7. Set `TRANSLATION_BACKEND=azure` in your `.env` file
+
+Unlike DeepL, Azure's translate endpoint auto-detects the source language on
+every request, so no separate language-detection call or API is needed.
 
 ### Server Configuration
 
