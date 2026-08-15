@@ -415,23 +415,7 @@ class HolodexManager:
         new_channels = await self.api.get_all_channels()
 
         if new_channels:
-            # Filter new channels to only include useful ones
-            filtered_channels = []
-            channel_keys = [
-                "id",
-                "name",
-                "yt_handle",
-                "english_name",
-                "org",
-                "photo",
-                "type",
-                "suborg",
-            ]
-            for channel in new_channels:
-                # Only include active channels with both name and ID
-                if channel.get("id") and channel.get("name") and not channel.get("inactive", False):
-                    # Create simplified channel object with additional info
-                    filtered_channels.append({key: channel.get(key, "") for key in channel_keys})
+            filtered_channels = self._filter_channels(new_channels)
 
             # Update the cache with filtered channels
             if filtered_channels:
@@ -445,6 +429,60 @@ class HolodexManager:
             self.channel_cache.update_cache(existing_channels)
         else:
             logger.error("Failed to fetch channels from Holodex API and no cache exists")
+
+    @staticmethod
+    def _filter_channels(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Filter raw Holodex channel data down to the fields we care about.
+
+        Args:
+            channels: Raw channel data from the Holodex API
+
+        Returns:
+            List of simplified channel objects, excluding inactive or incomplete entries
+        """
+        channel_keys = [
+            "id",
+            "name",
+            "yt_handle",
+            "english_name",
+            "org",
+            "photo",
+            "type",
+            "suborg",
+        ]
+        filtered_channels = []
+        for channel in channels:
+            # Only include active channels with both name and ID
+            if channel.get("id") and channel.get("name") and not channel.get("inactive", False):
+                filtered_channels.append({key: channel.get(key, "") for key in channel_keys})
+        return filtered_channels
+
+    async def refresh_channels(self) -> tuple[int, int] | None:
+        """Manually refresh the known VTuber channel list from the Holodex API.
+
+        This is append-only: newly discovered channels are added and known channels
+        are updated with the latest data, but no channel is ever removed from the
+        cache, even if Holodex no longer lists it. This keeps a transient API issue
+        or a VTuber's removal from Holodex from breaking anything (e.g. relay
+        configs) that still references a previously-known channel.
+
+        Returns:
+            Tuple of (added_count, updated_count), or None if the refresh failed
+        """
+        logger.info("Manually refreshing channel list from Holodex API...")
+        new_channels = await self.api.get_all_channels()
+        if not new_channels:
+            logger.warning("Manual channel refresh failed: no channels returned from Holodex API")
+            return None
+
+        filtered_channels = self._filter_channels(new_channels)
+        if not filtered_channels:
+            logger.warning("Manual channel refresh failed: no valid channels found")
+            return None
+
+        added, updated = self.channel_cache.merge_channels(filtered_channels)
+        logger.info(f"Manual channel refresh complete: {added} added, {updated} updated")
+        return added, updated
 
     async def stop(self):
         """Stop the Holodex stream tracking."""

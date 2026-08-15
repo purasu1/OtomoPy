@@ -137,6 +137,37 @@ class ChannelCache:
         self.channels = channels
         return self.save_cache()
 
+    def merge_channels(self, new_channels: list[dict[str, Any]]) -> tuple[int, int]:
+        """Merge freshly fetched channels into the cache without removing any existing ones.
+
+        Channels already in the cache are updated in place with the latest data.
+        Channels that no longer appear in new_channels are left untouched, so a
+        VTuber disappearing from the Holodex response (e.g. due to a transient API
+        issue or a graduation) can't break anything that still references it, such
+        as relay configs.
+
+        Args:
+            new_channels: Freshly fetched channel data to merge in
+
+        Returns:
+            Tuple of (number of newly added channels, number of existing channels updated)
+        """
+        merged = {channel["id"]: channel for channel in self.channels}
+        added = 0
+        updated = 0
+
+        for channel in new_channels:
+            channel_id = channel["id"]
+            if channel_id in merged:
+                updated += 1
+            else:
+                added += 1
+            merged[channel_id] = channel
+
+        self.channels = list(merged.values())
+        self.save_cache()
+        return added, updated
+
     def get_channels(self) -> list[dict[str, Any]]:
         """Get all channels from the cache.
 
