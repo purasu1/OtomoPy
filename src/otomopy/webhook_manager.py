@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 import discord
 from discord import Webhook

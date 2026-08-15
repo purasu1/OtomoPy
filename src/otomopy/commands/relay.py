@@ -281,7 +281,10 @@ def register_commands(bot):
             )
             embed.add_field(
                 name="How to add",
-                value="Use `/relay add` in a channel and type at least 2 characters of a VTuber name to see autocomplete suggestions",
+                value=(
+                    "Use `/relay add` in a channel and type at least 2 characters "
+                    "of a VTuber name to see autocomplete suggestions"
+                ),
                 inline=False,
             )
             return [embed]
@@ -381,7 +384,10 @@ def register_commands(bot):
             interaction.guild.id,
             channels_data,
             f"🌐 All Server Relays - {interaction.guild.name}",
-            f"All YouTube channel relays across the entire server ({len(channels_data)} channels with relays)",
+            (
+                "All YouTube channel relays across the entire server "
+                f"({len(channels_data)} channels with relays)"
+            ),
         )
 
         # Send with pagination if multiple pages
@@ -449,7 +455,10 @@ def register_commands(bot):
             interaction.guild.id,
             channels_data,
             f"📁 Category Relays - {category_name}",
-            f"YouTube channel relays in the '{category_name}' category ({len(channels_data)} channels with relays)",
+            (
+                f"YouTube channel relays in the '{category_name}' category "
+                f"({len(channels_data)} channels with relays)",
+            ),
         )
 
         # Send with pagination if multiple pages

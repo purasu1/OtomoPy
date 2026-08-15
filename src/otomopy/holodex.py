@@ -5,7 +5,6 @@ Holodex API integration for OtomoPy.
 import asyncio
 import json
 import logging
-import math
 import os
 import time
 from dataclasses import dataclass
@@ -372,7 +371,7 @@ class HolodexManager:
 
         # Mark initialization as complete
         self.initialization_complete_time = time.time()
-        logger.info(f"Channel cache initialization complete.")
+        logger.info("Channel cache initialization complete.")
 
         # Start WebSocket connection (only if not already connected)
         if not self.ws_task or self.ws_task.done():
@@ -400,7 +399,8 @@ class HolodexManager:
 
         if cache_loaded and self.channel_cache.is_cache_valid():
             logger.info(
-                f"Using existing channel cache with {len(self.channel_cache.get_channels())} channels"
+                "Using existing channel cache with "
+                f"{len(self.channel_cache.get_channels())} channels"
             )
             return
 
@@ -538,7 +538,8 @@ class HolodexManager:
             if stream.channel_id in removed_channels:
                 streams_to_remove.append(video_id)
                 logger.info(
-                    f"Cleaning up stream from removed channel: {stream.channel_name} - {stream.title}"
+                    "Cleaning up stream from removed channel: "
+                    f"{stream.channel_name} - {stream.title}"
                 )
 
         # Remove streams from current_streams and schedule unsubscription
@@ -598,7 +599,8 @@ class HolodexManager:
                 # Calculate next sync time for logging
                 next_sync_time = datetime.now(timezone.utc) + timedelta(seconds=sleep_duration)
                 logger.info(
-                    f"Stream update complete. Next update at {next_sync_time.strftime('%H:%M:%S')} UTC "
+                    "Stream update complete. "
+                    f"Next update at {next_sync_time.strftime('%H:%M:%S')} UTC "
                     f"(sleeping {sleep_duration:.1f}s)"
                 )
 
@@ -633,7 +635,8 @@ class HolodexManager:
         msg = await ws.receive(timeout=10)
         if not (msg.type == aiohttp.WSMsgType.TEXT and msg.data.startswith("0")):
             logger.error(
-                f"Invalid Socket.IO handshake: {msg.data if msg.type == aiohttp.WSMsgType.TEXT else msg.type}"
+                "Invalid Socket.IO handshake: "
+                f"{msg.data if msg.type == aiohttp.WSMsgType.TEXT else msg.type}"
             )
             return False
 
@@ -682,7 +685,8 @@ class HolodexManager:
                     close_code = ws.close_code
                     close_reason = getattr(ws, "close_reason", "Unknown")
                     logger.warning(
-                        f"WebSocket connection closed by server - Code: {close_code}, Reason: {close_reason}"
+                        "WebSocket connection closed by server - "
+                        f"Code: {close_code}, Reason: {close_reason}"
                     )
                     break
                 elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -736,7 +740,8 @@ class HolodexManager:
                         # If we get here, the connection was closed
                         if self.ws and hasattr(self.ws, "close_code"):
                             logger.info(
-                                f"WebSocket connection closed (Code: {self.ws.close_code}), will reconnect"
+                                "WebSocket connection closed "
+                                f"(Code: {self.ws.close_code}), will reconnect"
                             )
                         else:
                             logger.info("WebSocket connection closed, will reconnect")
@@ -826,7 +831,8 @@ class HolodexManager:
         # Process the chat message if it has a name (indicates it's a chat, not a status update)
         if event_data.get("name"):
             logger.info(
-                f"Received chat message from video {video_id}: {event_data.get('name')} - {event_data.get('message')}"
+                f"Received chat message from video {video_id}: "
+                f"{event_data.get('name')} - {event_data.get('message')}"
             )
             logger.debug(f"Full message data: {event_data}")
 
@@ -956,7 +962,8 @@ class HolodexManager:
 
             current_streams[event.video_id] = event
             logger.debug(
-                f"Found stream: {event.channel_name} - {event.title} - {event.status} - {event.video_id}"
+                f"Found stream: {event.channel_name} - {event.title} - "
+                f"{event.status} - {event.video_id}"
             )
 
         # Detect new streams or status changes
@@ -1014,7 +1021,8 @@ class HolodexManager:
         # Update our stored state
         self.current_streams = current_streams
         logger.debug(
-            f"Updated stream state: {len(current_streams)} current streams, {len(self.active_subscriptions)} active subscriptions"
+            f"Updated stream state: {len(current_streams)} current streams, "
+            f"{len(self.active_subscriptions)} active subscriptions"
         )
 
     async def _subscribe_to_chat(self, video_id: str):
