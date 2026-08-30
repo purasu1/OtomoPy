@@ -38,8 +38,9 @@ pip install -e .
 # Required:
 DISCORD_TOKEN=your_discord_bot_token_here
 OWNER_ID=your_discord_user_id_here
-CONFIG_FILE=config.json
 HOLODEX_API_KEY=your_holodex_api_key_here
+# Optional (defaults to otomopy.db in the working directory):
+# DB_FILE=otomopy.db
 # Optional (choose a translation backend; "deepl" is the default):
 TRANSLATION_BACKEND=deepl
 DEEPL_API_KEY=your_deepl_api_key_here
@@ -48,6 +49,11 @@ DEEPL_API_KEY=your_deepl_api_key_here
 # AZURE_TRANSLATOR_KEY=your_azure_translator_key_here
 # AZURE_TRANSLATOR_REGION=your_azure_resource_region_here
 ```
+
+The `.env` file is looked up starting from the directory you run the bot in,
+walking upwards. Set `OTOMOPY_ENV_FILE` to point at a specific file instead --
+useful when running several instances, or to be certain which credentials a run
+will use. The path actually loaded is logged at startup.
 
 ## Configuration
 
@@ -106,21 +112,44 @@ every request, so no separate language-detection call or API is needed.
 
 ### Server Configuration
 
-The bot uses a `config.json` file to store per-server settings:
+Per-server settings live in a SQLite database, by default `otomopy.db` in the
+directory you run the bot from. Set `DB_FILE` to put it elsewhere; the channel
+cache is kept alongside it. It holds the YouTube -> Discord channel relays, the
+per-guild translation blacklist, and the global emote map. The database is
+managed by the bot; you do not need to edit it manually.
 
-```json
-{
-  "guild_id": {
-    "admin_roles": ["role_id_1", "role_id_2"],
-    "relay_channels": {
-      "youtube_channel_id": ["discord_channel_id"]
-    },
-    "tl_blacklist": ["translator_name"]
-  }
-}
+#### Upgrading from `config.json`
+
+Earlier versions stored this in a JSON file. `CONFIG_FILE` is now optional and
+deprecated: point it at your old `config.json` for one run and it will be
+imported and then renamed to `config.json.migrated-<timestamp>` rather than
+deleted. Afterwards you can remove `CONFIG_FILE` from your `.env`.
+
+| `CONFIG_FILE` | `DB_FILE` | What happens |
+| --- | --- | --- |
+| unset or missing | missing | A new empty database is created |
+| unset or missing | exists | The database is loaded |
+| exists | missing | The JSON is imported and archived, then loaded |
+| exists | exists | The database is loaded; the JSON is left untouched |
+
+To rehearse the import against a scratch database first:
+
+```bash
+python -m otomopy.migrate_json ./config.json /tmp/scratch.db
 ```
 
-This config file is automatically managed by the bot. You do not need to edit it manually.
+If `config.json` cannot be parsed the bot refuses to start, rather than booting
+with an empty configuration that would look healthy while silently relaying
+nothing. Set `OTOMOPY_IGNORE_BAD_CONFIG=1` to start empty anyway.
+
+The old `admin_roles` field is not carried over: it was never read, and command
+permissions are enforced through Discord's own per-guild command permissions.
+
+To back up the database, do not copy the file while the bot is running -- use:
+
+```bash
+sqlite3 otomopy.db ".backup otomopy-backup.db"
+```
 
 ## Usage
 
@@ -176,7 +205,7 @@ Show all blacklisted translators or vtubers for the current guild.
 1. **Channel Monitoring**: The bot continuously polls the Holodex API for live streams from configured YouTube channels
 2. **Stream Detection**: When a stream starts, the bot posts a notification in the configured Discord channels
 3. **Chat Relay**: For live streams, the bot fetches chat messages and relays them to Discord, filtering out blacklisted translators
-4. **Permission Control**: Commands are restricted based on configured admin roles per server
+4. **Permission Control**: Commands are restricted through Discord's per-guild command permissions, adjustable in the server integration settings
 
 ## Project Structure
 
@@ -185,15 +214,29 @@ OtomoPy/
 ├── src/otomopy/
 │   ├── bot.py              # Main bot client and event handlers
 │   ├── holodex.py          # Holodex API integration
-│   ├── config.py           # Configuration management
+│   ├── config.py           # Configuration store (SQLite + in-memory index)
+│   ├── db.py               # Database connection, schema, and migrations
+│   ├── migrate_json.py     # One-shot import of the legacy config.json
 │   ├── channel_cache.py    # YouTube channel caching
 │   └── commands/           # Slash command implementations
 │       ├── relay.py        # Channel relay commands
 │       ├── blacklist.py    # Translator blacklist commands
+│       ├── emotes.py       # Emote configuration commands
 │       └── system.py       # System/utility commands
-├── config.json             # Server configuration
+├── tests/                  # Test suite
+├── otomopy.db              # Server configuration (created on first run)
 ├── pyproject.toml          # Project dependencies and metadata
 └── .env                    # Environment variables (create this)
+```
+
+## Development
+
+Install the package in editable mode along with the test dependencies, then run
+the suite:
+
+```bash
+pip install -e ".[dev]"
+pytest
 ```
 
 ## License

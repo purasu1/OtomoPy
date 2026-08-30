@@ -7,13 +7,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import pathlib
 import re
 from dataclasses import dataclass
 from datetime import datetime
 
 import discord
 from discord import app_commands
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from otomopy.config import GuildConfig
 from otomopy.holodex import ChatMessage, HolodexManager, StreamEvent
@@ -33,7 +34,9 @@ SCRUB_EMOTES = re.compile(r":([^:]+):https://[^\s]+")
 class DotEnvConfig:
     token: str
     owner_id: int
-    config_file: str
+    # Legacy JSON config, imported once and then archived. None when unset.
+    config_file: str | None
+    db_file: str
     holodex_api_key: str
     translation_backend: str
     deepl_api_key: str | None
@@ -41,9 +44,36 @@ class DotEnvConfig:
     azure_translator_region: str | None
     azure_translator_endpoint: str | None
 
+    @staticmethod
+    def find_env_file() -> str | None:
+        """Locate the .env file to load, resolving from the working directory.
+
+        python-dotenv's default resolves relative to the *calling source file*,
+        so it walks up from ``src/otomopy/`` and silently ignores a .env sitting
+        in the working directory -- which means running the bot from a scratch
+        directory can pick up a development checkout's real credentials. That
+        default also flips to the working directory on its own under a debugger,
+        coverage, or a profiler, so the same command can load different files.
+
+        ``usecwd=True`` only changes the starting point; the search still walks
+        up to the filesystem root, so running from a subdirectory of a checkout
+        still finds the .env at its root.
+        """
+        explicit = os.getenv("OTOMOPY_ENV_FILE")
+        if explicit:
+            if not pathlib.Path(explicit).is_file():
+                raise RuntimeError(f"OTOMOPY_ENV_FILE is set to {explicit}, which does not exist")
+            return explicit
+        return find_dotenv(usecwd=True) or None
+
     @classmethod
     def load_env(cls) -> DotEnvConfig:
-        load_dotenv()
+        env_file = cls.find_env_file()
+        if env_file:
+            load_dotenv(env_file)
+            logger.info(f"Loaded environment from {env_file}")
+        else:
+            logger.info("No .env file found; using the existing process environment")
         token = os.getenv("DISCORD_TOKEN")
         if token is None:
             raise RuntimeError("No Discord token found. Please add DISCORD_TOKEN to your .env file")
@@ -56,9 +86,21 @@ class DotEnvConfig:
         except ValueError:
             raise ValueError("Invalid owner ID. Please ensure it is an integer.")
 
+        # State lives in the database. CONFIG_FILE names the deprecated JSON
+        # config: when it exists and the database is empty it is imported once
+        # and archived. Both settings are optional.
+        # Paths are resolved so that they, and the data directory derived from
+        # them, do not depend on the working directory later changing.
+        db_file = str(pathlib.Path(os.getenv("DB_FILE") or "otomopy.db").resolve())
+
         config_file = os.getenv("CONFIG_FILE")
-        if config_file is None:
-            raise RuntimeError("No config file found. Please add CONFIG_FILE to your .env file")
+        if config_file is not None:
+            config_file = str(pathlib.Path(config_file).resolve())
+        elif pathlib.Path("config.json").is_file() and not pathlib.Path(db_file).exists():
+            logger.warning(
+                "Found config.json in the working directory but CONFIG_FILE is not set, "
+                "so it will not be imported. Set CONFIG_FILE to migrate it."
+            )
 
         holodex_api_key = os.getenv("HOLODEX_API_KEY")
         if holodex_api_key is None:
@@ -76,6 +118,7 @@ class DotEnvConfig:
             token,
             owner_id,
             config_file,
+            db_file,
             holodex_api_key,
             translation_backend,
             deepl_api_key,
@@ -100,13 +143,15 @@ class DiscordBot(discord.Client):
 
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
-        self.config = GuildConfig(self.dotenv.config_file)
+        self.config = GuildConfig(
+            db_file=self.dotenv.db_file, legacy_json_path=self.dotenv.config_file
+        )
 
         # Initialize webhook manager
         self.webhook_manager = WebhookManager()
 
-        # Set the cache directory to the same directory as the config file
-        config_dir = os.path.dirname(os.path.abspath(self.dotenv.config_file))
+        # Keep the channel cache alongside the database
+        config_dir = os.path.dirname(self.dotenv.db_file)
         os.environ["OTOMOPY_CONFIG_DIR"] = config_dir
 
         # Holodex integration
@@ -175,22 +220,17 @@ class DiscordBot(discord.Client):
         embed = await self._format_stream_event(event)
 
         # Find all Discord channels this should be relayed to
-        for guild_id_str, guild_config in self.config.data["guilds"].items():
-            relay_channels = guild_config.get("relay_channels", {})
+        for _guild_id, discord_channel_id in self.config.get_relay_targets(event.channel_id):
+            try:
+                channel = self.get_channel(discord_channel_id)
+                if not isinstance(channel, discord.TextChannel | discord.Thread):
+                    logger.warning(f"Channel {discord_channel_id} is not a text channel or thread")
+                    continue
 
-            # If this YouTube channel is being relayed in this guild
-            if event.channel_id in relay_channels:
-                for discord_channel_id_str in relay_channels[event.channel_id]:
-                    # Get the Discord channel
-                    channel = self.get_channel(
-                        int(discord_channel_id_str)
-                    )  # Send the embed to the Discord channel
-                    if not isinstance(channel, discord.TextChannel | discord.Thread):
-                        logging.warning(
-                            f"Channel {discord_channel_id_str} is not a text channel or thread"
-                        )
-                        continue
-                    await channel.send(embed=embed)
+                # Send the embed to the Discord channel
+                await channel.send(embed=embed)
+            except Exception:
+                logger.exception("Error sending stream event:")
 
     async def _format_stream_event(self, event: StreamEvent) -> discord.Embed:
         # Create an embed for the event
@@ -252,34 +292,26 @@ class DiscordBot(discord.Client):
         formatted_message = await self._format_message(message)
 
         # Find all Discord channels this should be relayed to
-        for guild_id_str, guild_config in self.config.data["guilds"].items():
+        for guild_id, discord_channel_id in self.config.get_relay_targets(message.channel_id):
             # Check if the message author is blacklisted in this guild
             # Use translator name directly without any modifications
-            guild_id = int(guild_id_str)
             if self.config.is_user_blacklisted(guild_id, message.author):
                 logger.debug(
                     f"Skipping message from blacklisted user {message.author} in guild {guild_id}"
                 )
                 continue
 
-            # Get all channels on this guild to relay the message to
-            relay_channels = guild_config.get("relay_channels", {})
-            discord_channels = set(relay_channels.get(message.channel_id, []))
+            try:
+                # Get the Discord channel
+                channel = self.get_channel(discord_channel_id)
+                if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
+                    logger.warning(f"Channel {discord_channel_id} is not a text channel or thread")
+                    continue
 
-            for discord_channel_id_str in discord_channels:
-                try:
-                    # Get the Discord channel
-                    channel = self.get_channel(int(discord_channel_id_str))
-                    if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
-                        logging.warning(
-                            f"Channel {discord_channel_id_str} is not a text channel or thread"
-                        )
-                        continue
-
-                    # Send the message to the Discord channel
-                    await channel.send(formatted_message)
-                except Exception:
-                    logger.exception("Error sending chat message:")
+                # Send the message to the Discord channel
+                await channel.send(formatted_message)
+            except Exception:
+                logger.exception("Error sending chat message:")
 
     async def _format_message(
         self,
@@ -362,8 +394,9 @@ class DiscordBot(discord.Client):
 
         chat_message = "\n".join(content_parts)
 
-        for guild_id_str, guild_config in self.config.data["guilds"].items():
-            guild_id = int(guild_id_str)
+        # Relay to channels subscribed to either the stream or the speaking VTuber
+        targets = self.config.get_relay_targets(message.channel_id, message_author_channel["id"])
+        for guild_id, discord_channel_id in targets:
             if self.config.is_user_blacklisted(guild_id, message_author_channel["name"]):
                 logger.debug(
                     f"Skipping message from blacklisted VTuber {message_author_channel['name']} "
@@ -371,30 +404,24 @@ class DiscordBot(discord.Client):
                 )
                 continue
 
-            # Get all channels on this guild to relay the message to
-            relay_channels = guild_config.get("relay_channels", {})
-            discord_channels = set(relay_channels.get(message.channel_id, []))
-            discord_channels.update(set(relay_channels.get(message_author_channel["id"], [])))
+            try:
+                # Get the Discord channel
+                channel = self.get_channel(discord_channel_id)
+                if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
+                    logger.error(f"Invalid channel ID: {discord_channel_id}")
+                    continue
 
-            for discord_channel_id_str in discord_channels:
-                try:
-                    # Get the Discord channel
-                    channel = self.get_channel(int(discord_channel_id_str))
-                    if not channel or not isinstance(channel, discord.TextChannel | discord.Thread):
-                        logging.error(f"Invalid channel ID: {discord_channel_id_str}")
-                        continue
+                webhook = await self.webhook_manager.get_or_create_webhook(channel)
+                if webhook is None:
+                    logger.error(f"Failed to get webhook for channel {channel.id}")
+                    continue
 
-                    webhook = await self.webhook_manager.get_or_create_webhook(channel)
-                    if webhook is None:
-                        logging.error(f"Failed to get webhook for channel {channel.id}")
-                        continue
-
-                    if isinstance(channel, discord.Thread):
-                        await webhook.send(chat_message, thread=channel, **webhook_args)
-                    else:
-                        await webhook.send(chat_message, **webhook_args)
-                except Exception:
-                    logger.exception("Error sending chat message:")
+                if isinstance(channel, discord.Thread):
+                    await webhook.send(chat_message, thread=channel, **webhook_args)
+                else:
+                    await webhook.send(chat_message, **webhook_args)
+            except Exception:
+                logger.exception("Error sending chat message:")
 
     def _get_status_color(self, status: str) -> discord.Color:
         """Get the embed color for a stream status.
@@ -425,6 +452,30 @@ def main():
         logger.info(f"{bot.user} has connected to Discord!")
         logger.info(f"Connected to {len(bot.guilds)} guilds")
         logger.info(f"Owner ID: {dotenv.owner_id}")
+
+    async def on_app_command_error(
+        interaction: discord.Interaction, error: app_commands.AppCommandError
+    ):
+        """Report unhandled command errors instead of failing silently.
+
+        Store mutations raise when a change could not be persisted, so the user
+        must never be told a change succeeded when it did not. discord.py routes
+        every unhandled command and autocomplete exception here.
+        """
+        logger.exception("Unhandled command error", exc_info=error)
+        message = (
+            "\u26a0\ufe0f Something went wrong and your change was **not** saved. "
+            "The bot owner has been notified."
+        )
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except discord.HTTPException:
+            logger.exception("Could not deliver the error message to the user:")
+
+    bot.tree.on_error = on_app_command_error
 
     # Import commands here to avoid circular imports
     from otomopy.commands import blacklist, emotes, relay, system
@@ -459,5 +510,12 @@ def main():
             logger.info("Holodex manager cleanup complete")
         except Exception:
             logger.exception("Error during Holodex manager cleanup:")
+
+        try:
+            # Checkpoints the write-ahead log so the database is a single file at rest
+            bot.config.close()
+            logger.info("Configuration database closed")
+        except Exception:
+            logger.exception("Error closing the configuration database:")
 
         logger.info("Bot shutdown complete")
