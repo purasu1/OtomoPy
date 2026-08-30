@@ -91,3 +91,48 @@ def register_commands(bot):
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @bot.tree.command(
+        name="refresh_channels",
+        description="Refresh the known VTuber channel list from Holodex (owner only)",
+    )
+    @discord.app_commands.default_permissions(administrator=True)
+    async def refresh_channels(interaction: discord.Interaction):
+        """Manually refresh the cached list of VTuber channels from Holodex.
+
+        Only the bot owner is allowed to use this command. Refresh is append-only:
+        newly discovered channels are added, known channels are updated, but no
+        channel is ever removed, even if Holodex no longer lists it.
+
+        Args:
+            interaction: The Discord interaction
+        """
+        if interaction.user.id != bot.dotenv.owner_id:
+            await interaction.response.send_message(
+                "You are not authorized to use this command.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        result = await bot.holodex_manager.refresh_channels()
+
+        if result is None:
+            await interaction.followup.send(
+                "❌ Failed to refresh the channel list from Holodex. Check the logs for details.",
+                ephemeral=True,
+            )
+            return
+
+        added, updated = result
+        total = len(bot.holodex_manager.channel_cache.get_channels())
+        await interaction.followup.send(
+            f"✅ Channel list refreshed: **{added}** new, **{updated}** updated, "
+            f"**{total}** total known channels.\n"
+            "-# Channels are never removed from the list, even if Holodex stops listing them.",
+            ephemeral=True,
+        )
+        logger.info(
+            f"User {interaction.user} manually refreshed the channel list "
+            f"({added} added, {updated} updated, {total} total)"
+        )
