@@ -14,7 +14,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 
 ## Requirements
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Discord Bot Token
 - Holodex API Key
 - Discord server with appropriate permissions

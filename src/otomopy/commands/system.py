@@ -5,14 +5,21 @@ These commands are for system-level operations, typically
 only accessible to the bot owner.
 """
 
+# Slash-command callbacks are registered by their decorators, never called by name.
+# pyright: reportUnusedFunction=false
+
 import logging
+from typing import TYPE_CHECKING
 
 import discord
+
+if TYPE_CHECKING:  # bot.py imports this package lazily to break the import cycle
+    from otomopy.bot import DiscordBot
 
 logger = logging.getLogger(__name__)
 
 
-def register_commands(bot):
+def register_commands(bot: "DiscordBot") -> None:
     """Register system commands with the bot.
 
     Args:
@@ -43,39 +50,27 @@ def register_commands(bot):
         embed.add_field(name="Tracked YouTube Channels", value=str(tracked_channels), inline=True)
 
         # WebSocket connection status
-        ws_status = (
-            "Connected"
-            if (hasattr(bot.holodex_manager, "ws_connected") and bot.holodex_manager.ws_connected)
-            else "Disconnected"
-        )
+        ws_status = "Connected" if bot.holodex_manager.ws_connected else "Disconnected"
         embed.add_field(name="WebSocket Status", value=ws_status, inline=True)
 
-        # Live streams currently being tracked
-        live_stream_count = len(
-            [s for s in bot.holodex_manager.current_streams.values() if s.status == "live"]
-        )
+        # Streams currently being tracked; None until the first Holodex poll lands.
+        streams = bot.holodex_manager.current_streams or {}
+        live_stream_count = len([s for s in streams.values() if s.status == "live"])
         embed.add_field(name="Current Live Streams", value=str(live_stream_count), inline=True)
 
-        # Upcoming streams being tracked
-        upcoming_stream_count = len(
-            [s for s in bot.holodex_manager.current_streams.values() if s.status == "upcoming"]
-        )
+        upcoming_stream_count = len([s for s in streams.values() if s.status == "upcoming"])
         embed.add_field(name="Upcoming Streams", value=str(upcoming_stream_count), inline=True)
 
         # Chat message stats
-        active_subs = len(getattr(bot.holodex_manager, "active_subscriptions", set()))
-        chat_messages = getattr(bot, "holodex_chat_messages_received", 0)
-        session_id = getattr(bot.holodex_manager, "session_id", "None")
+        active_subs = len(bot.holodex_manager.active_subscriptions)
+        chat_messages = bot.holodex_chat_messages_received
+        session_id = bot.holodex_manager.session_id or "None"
         embed.add_field(name="Active Chat Subscriptions", value=str(active_subs), inline=True)
         embed.add_field(name="Chat Messages Received", value=str(chat_messages), inline=True)
 
         embed.add_field(
             name="WebSocket Session ID",
-            value=(
-                session_id[:8] + "..."
-                if session_id and session_id != "None" and len(session_id) > 10
-                else session_id
-            ),
+            value=(session_id[:8] + "..." if len(session_id) > 10 else session_id),
             inline=True,
         )
 

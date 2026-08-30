@@ -3,13 +3,15 @@ Holodex API integration for OtomoPy.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import aiohttp
 
@@ -21,7 +23,7 @@ logger = logging.getLogger(__name__)
 class HolodexAPI:
     """Client for interacting with the Holodex API."""
 
-    BASE_URL = "https://holodex.net/api/v2"
+    BASE_URL: str = "https://holodex.net/api/v2"
 
     def __init__(self, api_key: str):
         """Initialize the Holodex API client.
@@ -29,10 +31,8 @@ class HolodexAPI:
         Args:
             api_key: Holodex API key
         """
-        self.api_key = api_key
+        self.api_key: str = api_key
         self.session: aiohttp.ClientSession | None = None
-        self._channel_cache = None
-        self._last_cache_refresh = 0  # Unix timestamp of last cache refresh
 
     async def initialize(self):
         """Initialize the API client session."""
@@ -146,7 +146,7 @@ class HolodexAPI:
             # Add rate limiting to avoid 429 errors
             request_delay = 0.5  # 500 ms delay between requests
 
-            all_channels = []
+            all_channels: list[dict[str, Any]] = []
 
             # Define a maximum number of API calls to avoid excessive rate limiting
             max_api_calls = 100
@@ -174,7 +174,7 @@ class HolodexAPI:
 
                 async with self.session.get(f"{self.BASE_URL}/channels", params=params) as response:
                     if response.status == 200:
-                        channels = await response.json()
+                        channels = cast(list[dict[str, Any]], await response.json())
 
                         if not channels:
                             # No more channels to fetch
@@ -317,23 +317,32 @@ class HolodexManager:
             api_key: Holodex API key
             cache_dir: Directory to store the channel cache. If empty, uses the current directory.
         """
-        self.api = HolodexAPI(api_key)
+        self.api: HolodexAPI = HolodexAPI(api_key)
         self.current_streams: dict[str, StreamEvent] | None = None  # video_id -> StreamEvent
         self.active_subscriptions: set[str] = set()  # Set of video_ids currently subscribed to
-        self.running = False
-        self.update_interval = 60  # seconds
-        self.sync_offset_seconds = 30  # seconds after interval boundary to sync
-        self.api_key = api_key
+        self.running: bool = False
+        self.update_interval: int = 60  # seconds
+        self.sync_offset_seconds: int = 30  # seconds after interval boundary to sync
+        self.api_key: str = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
         self.channel_handles: dict[str, Any] = {}  # Cache of channel info by handle
 
         # WebSocket connection
-        self.ws = None
-        self.ws_connected = False
-        self.video_handlers: dict[str, asyncio.Task] = {}
+        self.ws: aiohttp.ClientWebSocketResponse | None = None
+        self.ws_connected: bool = False
+        self.video_handlers: dict[str, asyncio.Task[Any]] = {}
         self.session_id: str | None = None
-        self.ws_connecting_lock = asyncio.Lock()
-        self.ws_task = None
+        self.ws_connecting_lock: asyncio.Lock = asyncio.Lock()
+        self.ws_task: asyncio.Task[None] | None = None
+        # Fire-and-forget tasks are kept here so they are not garbage collected
+        # mid-flight; each one drops itself on completion.
+        self._background_tasks: set[asyncio.Task[None]] = set()
+        self.ws_session: aiohttp.ClientSession | None = None
+
+        # Callbacks, supplied by start()
+        self.stream_callback: Callable[[StreamEvent], Awaitable[None]] | None = None
+        self.chat_callback: Callable[[ChatMessage], Awaitable[None]] | None = None
+        self.vtuber_callback: Callable[[ChatMessage], Awaitable[None]] | None = None
 
         # Stream event skip tracking
         self.initialization_complete_time: float | None = None
@@ -342,7 +351,7 @@ class HolodexManager:
         if not cache_dir:
             # Use the directory where the config file is located
             config_dir = os.environ.get("OTOMOPY_CONFIG_DIR", ".")
-            self.channel_cache = ChannelCache(config_dir)
+            self.channel_cache: ChannelCache = ChannelCache(config_dir)
         else:
             self.channel_cache = ChannelCache(cache_dir)
 
@@ -450,7 +459,7 @@ class HolodexManager:
             "type",
             "suborg",
         ]
-        filtered_channels = []
+        filtered_channels: list[dict[str, Any]] = []
         for channel in channels:
             # Only include active channels with both name and ID
             if channel.get("id") and channel.get("name") and not channel.get("inactive", False):
@@ -491,13 +500,11 @@ class HolodexManager:
         # Cancel the WebSocket task
         if self.ws_task and not self.ws_task.done():
             self.ws_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.ws_task
-            except asyncio.CancelledError:
-                pass
 
         # Cancel all video handler tasks
-        for video_id, task in self.video_handlers.items():
+        for task in self.video_handlers.values():
             if not task.done():
                 task.cancel()
 
@@ -506,7 +513,7 @@ class HolodexManager:
             await self.ws.close()
 
         # Close WebSocket session
-        if hasattr(self, "ws_session") and self.ws_session and not self.ws_session.closed:
+        if self.ws_session and not self.ws_session.closed:
             await self.ws_session.close()
             self.ws_session = None
 
@@ -555,7 +562,7 @@ class HolodexManager:
                 if channel is None:
                     logger.info(f"API did not return a channel for handle {name}")
                     return None
-                self.channel_cache._channel_by_handle[name] = channel
+                self.channel_cache.cache_channel_by_handle(name, channel)
 
             name = channel["name"]
 
@@ -571,7 +578,7 @@ class HolodexManager:
             return
 
         # Find streams that belong to removed channels
-        streams_to_remove = []
+        streams_to_remove: list[str] = []
         for video_id, stream in self.current_streams.items():
             if stream.channel_id in removed_channels:
                 streams_to_remove.append(video_id)
@@ -588,7 +595,9 @@ class HolodexManager:
             # Schedule unsubscription from chat if we're subscribed
             if video_id in self.active_subscriptions and self.running:
                 # Create a task to unsubscribe from chat
-                asyncio.create_task(self._unsubscribe_from_chat(video_id))
+                task = asyncio.create_task(self._unsubscribe_from_chat(video_id))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
     def _calculate_sleep_until_next_sync(self) -> float:
         """Calculate sleep time until next synchronized interval.
@@ -601,7 +610,7 @@ class HolodexManager:
         Returns:
             Sleep duration in seconds until the next sync point
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Calculate seconds since midnight
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -635,7 +644,7 @@ class HolodexManager:
                 sleep_duration = self._calculate_sleep_until_next_sync()
 
                 # Calculate next sync time for logging
-                next_sync_time = datetime.now(timezone.utc) + timedelta(seconds=sleep_duration)
+                next_sync_time = datetime.now(UTC) + timedelta(seconds=sleep_duration)
                 logger.info(
                     "Stream update complete. "
                     f"Next update at {next_sync_time.strftime('%H:%M:%S')} UTC "
@@ -663,12 +672,12 @@ class HolodexManager:
 
         return await self.ws_session.ws_connect(
             url,
-            timeout=aiohttp.ClientWSTimeout(ws_close=30),  # pyright: ignore
+            timeout=aiohttp.ClientWSTimeout(ws_close=30),  # pyright: ignore[reportCallIssue]
             receive_timeout=None,  # Disable receive timeout for persistent connection
             heartbeat=30,
         )
 
-    async def _handle_socketio_handshake(self, ws):
+    async def _handle_socketio_handshake(self, ws: aiohttp.ClientWebSocketResponse) -> bool:
         """Handle Socket.IO handshake protocol."""
         msg = await ws.receive(timeout=10)
         if not (msg.type == aiohttp.WSMsgType.TEXT and msg.data.startswith("0")):
@@ -679,7 +688,7 @@ class HolodexManager:
             return False
 
         # Parse Socket.IO handshake
-        handshake_data = json.loads(msg.data[1:])
+        handshake_data = cast(dict[str, Any], json.loads(msg.data[1:]))
         self.session_id = handshake_data.get("sid")
         logger.info(f"Socket.IO handshake successful. Session ID: {self.session_id}")
 
@@ -699,7 +708,7 @@ class HolodexManager:
             await asyncio.sleep(0.1)  # Small delay between subscriptions
 
         # Also check for any streams we might have missed while disconnected
-        if hasattr(self, "stream_callback") and self.current_streams is not None:
+        if self.stream_callback is not None and self.current_streams is not None:
             for video_id, event in self.current_streams.items():
                 if (
                     event.status in ["live", "upcoming"]
@@ -710,7 +719,7 @@ class HolodexManager:
                     await self._subscribe_to_chat(video_id)
                     await asyncio.sleep(0.1)  # Small delay between subscriptions
 
-    async def _process_messages_loop(self, ws):
+    async def _process_messages_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         """Main message processing loop for WebSocket messages."""
         while self.running and not ws.closed:
             try:
@@ -731,7 +740,7 @@ class HolodexManager:
                     logger.error(f"WebSocket error: {ws.exception()}")
                     break
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # This is expected for the receive timeout
                 continue
             except Exception:
@@ -742,7 +751,6 @@ class HolodexManager:
         """Main WebSocket connection loop with proper Socket.IO protocol handling."""
         retry_delay = 1
         max_retry_delay = 60
-        self.ws_session = None
 
         try:
             while self.running:
@@ -786,7 +794,7 @@ class HolodexManager:
                         self.ws_connected = False
                         self.ws = None
 
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.error("WebSocket connection timeout")
                         self.ws_connected = False
                         self.ws = None
@@ -817,7 +825,7 @@ class HolodexManager:
             # Clean up session
             self.ws_connected = False
             if self.ws_session and not self.ws_session.closed:
-                await self.ws_session.close()  # pyright: ignore
+                await self.ws_session.close()
                 self.ws_session = None
 
     async def _handle_socketio_protocol_message(self, message: str) -> bool:
@@ -846,12 +854,12 @@ class HolodexManager:
 
         return False
 
-    async def _handle_subscribe_success(self, event_data: dict):
+    async def _handle_subscribe_success(self, event_data: dict[str, Any]):
         """Handle successful chat subscription events."""
         video_id = event_data.get("id")
         logger.info(f"Successfully subscribed to chat for video {video_id}")
 
-    async def _handle_subscribe_error(self, event_data: dict):
+    async def _handle_subscribe_error(self, event_data: dict[str, Any]):
         """Handle chat subscription error events."""
         video_id = event_data.get("id")
         error_msg = event_data.get("message", "Unknown error")
@@ -859,7 +867,7 @@ class HolodexManager:
         if video_id in self.active_subscriptions:
             self.active_subscriptions.remove(video_id)
 
-    async def _handle_chat_event(self, event_name: str, event_data: dict):
+    async def _handle_chat_event(self, event_name: str, event_data: dict[str, Any]):
         """Handle chat message events for a specific video."""
         if self.current_streams is None:
             return
@@ -886,8 +894,9 @@ class HolodexManager:
                 return
 
             if chat_message.is_vtuber:
-                await self.vtuber_callback(chat_message)
-            else:
+                if self.vtuber_callback is not None:
+                    await self.vtuber_callback(chat_message)
+            elif self.chat_callback is not None:
                 await self.chat_callback(chat_message)
         elif event_data.get("type") == "end":
             # Chat ended for this video
@@ -906,12 +915,15 @@ class HolodexManager:
             if not json_str:
                 return
 
-            data = json.loads(json_str)
+            decoded: Any = json.loads(json_str)
+            if not isinstance(decoded, list):
+                return
+            payload = cast(list[Any], decoded)
 
             # Handle different event types
-            if isinstance(data, list) and len(data) >= 2:
-                event_name = data[0]
-                event_data = data[1]
+            if len(payload) >= 2:
+                event_name = cast(str, payload[0])
+                event_data = cast(dict[str, Any], payload[1])
 
                 if event_name == "subscribeSuccess":
                     await self._handle_subscribe_success(event_data)
@@ -963,7 +975,7 @@ class HolodexManager:
         try:
             # Parse the ISO format datetime string
             start_time = datetime.fromisoformat(event.start_time.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Check if more than 24 hours away
             return start_time > now + timedelta(hours=24)
@@ -994,7 +1006,7 @@ class HolodexManager:
         logger.debug(f"Fetched {len(live_data)} live/upcoming streams from Holodex API")
 
         # Convert to StreamEvent objects
-        current_streams = {}
+        current_streams: dict[str, StreamEvent] = {}
         for item in live_data:
             event = StreamEvent.from_api_response(item)
 
@@ -1016,8 +1028,12 @@ class HolodexManager:
                     f"Stream change detected: {event.channel_name} - {event.title} - {event.status}"
                 )
                 # Don't process streams that are upcoming and more than 24 hours away
-                if self.current_streams is not None and (
-                    event.status != "upcoming" or not self._is_stream_more_than_24h_away(event)
+                if (
+                    self.current_streams is not None
+                    and self.stream_callback is not None
+                    and (
+                        event.status != "upcoming" or not self._is_stream_more_than_24h_away(event)
+                    )
                 ):
                     # Call the callback with the event
                     try:

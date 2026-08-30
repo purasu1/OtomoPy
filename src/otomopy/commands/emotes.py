@@ -5,15 +5,22 @@ These commands are for system-level operations, typically
 only accessible to the bot owner.
 """
 
+# Slash-command callbacks are registered by their decorators, never called by name.
+# pyright: reportUnusedFunction=false
+
 import logging
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
 
+if TYPE_CHECKING:  # bot.py imports this package lazily to break the import cycle
+    from otomopy.bot import DiscordBot
+
 logger = logging.getLogger(__name__)
 
 
-def register_commands(bot):
+def register_commands(bot: "DiscordBot") -> None:
     """Register system commands with the bot.
 
     Args:
