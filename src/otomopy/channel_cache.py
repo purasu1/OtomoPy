@@ -7,6 +7,7 @@ This module provides a class to cache YouTube channel data from Holodex.
 import json
 import logging
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -108,17 +109,27 @@ class ChannelCache:
         Returns:
             bool: True if cache was saved successfully, False otherwise
         """
+        tmp_fd, tmp_name = tempfile.mkstemp(
+            dir=str(self.cache_dir), prefix=self.cache_file.name + ".", suffix=".tmp"
+        )
         try:
             data = {"channels": self.channels, "last_update": time.time()}
 
-            with open(self.cache_file, "w", encoding="utf-8") as f:
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, self.cache_file)
 
             self.last_update = data["last_update"]
             logger.info(f"Saved {len(self.channels)} channels to cache")
             return True
         except Exception:
             logger.exception("Error saving channel cache:")
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
             return False
 
     def update_cache(self, channels: list[dict[str, Any]]) -> bool:

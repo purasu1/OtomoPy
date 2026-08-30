@@ -37,7 +37,7 @@ def register_commands(bot):
     @emote_group.command(name="unset", description="Unset an emote for the bot")
     async def unset_emote(interaction: discord.Interaction, name: str):
         """Unset an emote for the bot. Only the owner is allowed to use this command."""
-        if interaction.user.id != bot.owner_id:
+        if interaction.user.id != bot.dotenv.owner_id:
             await interaction.response.send_message(
                 "You are not authorized to use this command.", ephemeral=True
             )
@@ -45,6 +45,7 @@ def register_commands(bot):
 
         if not bot.config.unset_emote(name):
             await interaction.response.send_message("This emote is not set.", ephemeral=True)
+            return
         await interaction.response.send_message("Emote unset successfully.", ephemeral=True)
 
     # Add the emote group to the command tree with proper permissions

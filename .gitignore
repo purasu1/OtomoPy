@@ -36,4 +36,13 @@ ENV/
 
 # OtomoPy config files
 config.json
+config.json.migrated*
 holodex_channels_cache.json
+
+# OtomoPy state database (and its write-ahead log sidecars)
+*.db
+*.db-wal
+*.db-shm
+
+# Testing
+.pytest_cache/
