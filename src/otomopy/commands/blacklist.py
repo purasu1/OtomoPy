@@ -5,13 +5,20 @@ This module provides commands for managing the per-guild translation blacklist,
 allowing admins to block specific YouTube users from having their messages relayed.
 """
 
+# Slash-command callbacks are registered by their decorators, never called by name.
+# pyright: reportUnusedFunction=false
+
 import logging
 import re
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
 
 from .autocomplete import channel_autocomplete
+
+if TYPE_CHECKING:  # bot.py imports this package lazily to break the import cycle
+    from otomopy.bot import DiscordBot
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +26,7 @@ logger = logging.getLogger(__name__)
 MESSAGE_AUTHOR = re.compile(r"^:([^:]+):\s?(?:\|\||\*\*)(.+?)(?:\|\||\*\*)")
 
 
-def register_commands(bot):
+def register_commands(bot: "DiscordBot") -> None:
     """Register blacklist commands with the bot.
 
     Args:
@@ -29,7 +36,7 @@ def register_commands(bot):
     async def channel_autocomplete_wrapper(
         interaction: discord.Interaction,
         current: str,
-    ):
+    ) -> list[app_commands.Choice[str]]:
         """Wrapper for the shared channel autocomplete function."""
         return await channel_autocomplete(bot, interaction, current)
 
@@ -147,7 +154,7 @@ def register_commands(bot):
             return []
 
         blacklisted_users = bot.config.get_blacklisted_users(interaction.guild.id)
-        choices = []
+        choices: list[app_commands.Choice[str]] = []
 
         for user_name in blacklisted_users:
             if current.lower() in user_name.lower():
@@ -222,7 +229,7 @@ def register_commands(bot):
             return
 
         # Format the blacklist
-        blacklist_lines = []
+        blacklist_lines: list[str] = []
         for i, user_name in enumerate(blacklisted_users, 1):
             blacklist_lines.append(f"{i}. `{user_name}`")
 
@@ -231,7 +238,7 @@ def register_commands(bot):
 
         if len(message_content) > 2000:
             # Split into chunks
-            chunks = []
+            chunks: list[str] = []
             current_chunk = "**Blacklisted Users:**\n"
 
             for line in blacklist_lines:
@@ -276,7 +283,7 @@ def register_commands(bot):
             return
 
         # Check if the message is from our bot
-        if message.author.id != bot.user.id:
+        if bot.user is None or message.author.id != bot.user.id:
             await interaction.response.send_message(
                 "You can only blacklist translators from translation relay messages",
                 ephemeral=True,

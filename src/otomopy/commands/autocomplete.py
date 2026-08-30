@@ -6,20 +6,23 @@ across different command modules.
 """
 
 import logging
-from typing import List
+from typing import TYPE_CHECKING, Any
 
 import discord
 from discord import app_commands
+
+if TYPE_CHECKING:  # bot.py imports this package lazily to break the import cycle
+    from otomopy.bot import DiscordBot
 
 logger = logging.getLogger(__name__)
 
 
 async def channel_autocomplete(
-    bot,
+    bot: "DiscordBot",
     interaction: discord.Interaction,
     current: str,
     filter_relayed_only: bool = False,
-) -> List[app_commands.Choice[str]]:
+) -> list[app_commands.Choice[str]]:
     """Autocomplete callback for channel search.
 
     Args:
@@ -37,10 +40,9 @@ async def channel_autocomplete(
 
     # For regular search, require at least 2 characters, but for relayed-only allow shorter queries
     min_length = 1 if filter_relayed_only else 2
-    if not current or len(current.strip()) < min_length:
-        if not filter_relayed_only:
-            logger.info("Query too short, returning empty results")
-            return []
+    if (not current or len(current.strip()) < min_length) and not filter_relayed_only:
+        logger.info("Query too short, returning empty results")
+        return []
 
     # Normalize the search query
     query = current.lower().strip() if current else ""
@@ -59,7 +61,7 @@ async def channel_autocomplete(
         return []
 
     # If filtering for relayed channels only, get the list of relayed channel IDs
-    relayed_channel_ids = []
+    relayed_channel_ids: list[str] = []
     if filter_relayed_only:
         # For relayed-only filtering, we need guild and channel context
         if interaction.guild is None or not isinstance(
@@ -76,7 +78,7 @@ async def channel_autocomplete(
         logger.info(f"Found {len(relayed_channel_ids)} relayed channels")
 
     # Search the cache for matching channels
-    matches = []
+    matches: list[dict[str, Any]] = []
     for channel in cached_channels:
         # If filtering for relayed only, skip channels not in the relayed list
         channel_id = channel.get("id", "")
@@ -92,7 +94,7 @@ async def channel_autocomplete(
             matches.append(channel)
 
     # Format results as choices
-    choices = []
+    choices: list[app_commands.Choice[str]] = []
     for vtuber in matches[:25]:  # Discord limits to 25 choices
         name = vtuber.get("name", "")
         channel_id = vtuber.get("id", "")

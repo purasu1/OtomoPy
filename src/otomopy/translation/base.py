@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from typing import Any, override
 
 import aiohttp
 
@@ -25,13 +26,12 @@ class TranslationProvider(ABC):
             The translated text, or None if translation is not needed
             or fails.
         """
-        pass
 
 
 class DeepLProvider(TranslationProvider):
     """DeepL API implementation of TranslationProvider."""
 
-    name = "DeepL"
+    name: str = "DeepL"
 
     def __init__(self, api_key: str):
         """
@@ -40,18 +40,19 @@ class DeepLProvider(TranslationProvider):
         Args:
             api_key: The DeepL API key.
         """
-        self.api_key = api_key
+        self.api_key: str = api_key
+        # deepl is an optional dependency, so its client carries no types here.
+        self.client: Any = None
         try:
-            from deepl import DeepLClient  # pyright: ignore
+            import deepl  # pyright: ignore[reportMissingImports]
 
-            self.client = DeepLClient(api_key)
+            self.client = deepl.DeepLClient(api_key)  # pyright: ignore[reportUnknownMemberType]
         except ImportError:
             logger.warning("DeepL package is not installed. DeepLProvider will fail if used.")
-            self.client = None
         except Exception as e:
             logger.error(f"Failed to initialize DeepL client: {e}")
-            self.client = None
 
+    @override
     async def translate(self, text: str, target_lang: str = "en") -> str | None:
         """
         Translates text using the DeepL API.
@@ -87,9 +88,9 @@ class DeepLProvider(TranslationProvider):
 class AzureProvider(TranslationProvider):
     """Azure AI Translator implementation of TranslationProvider."""
 
-    name = "Azure"
+    name: str = "Azure"
 
-    DEFAULT_ENDPOINT = "https://api.cognitive.microsofttranslator.com"
+    DEFAULT_ENDPOINT: str = "https://api.cognitive.microsofttranslator.com"
 
     def __init__(self, api_key: str, region: str | None = None, endpoint: str | None = None):
         """
@@ -103,10 +104,11 @@ class AzureProvider(TranslationProvider):
             endpoint: The Translator API endpoint. Defaults to the standard
                 global endpoint.
         """
-        self.api_key = api_key
-        self.region = region
-        self.endpoint = endpoint or self.DEFAULT_ENDPOINT
+        self.api_key: str = api_key
+        self.region: str | None = region
+        self.endpoint: str = endpoint or self.DEFAULT_ENDPOINT
 
+    @override
     async def translate(self, text: str, target_lang: str = "en") -> str | None:
         """
         Translates text using the Azure AI Translator API, auto-detecting the
@@ -122,15 +124,17 @@ class AzureProvider(TranslationProvider):
         params = {"api-version": "3.0", "to": target_lang}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     f"{self.endpoint}/translate",
                     params=params,
                     headers=headers,
                     json=[{"Text": text}],
-                ) as response:
-                    response.raise_for_status()
-                    result = await response.json()
+                ) as response,
+            ):
+                response.raise_for_status()
+                result = await response.json()
 
             translation = result[0]
             detected_lang = translation.get("detectedLanguage", {}).get("language", "")

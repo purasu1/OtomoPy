@@ -15,6 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,9 @@ class CorruptConfigError(RuntimeError):
     """The legacy config file exists but could not be parsed."""
 
 
-def _load_json(path: Path) -> dict:
+def _load_json(path: Path) -> dict[str, Any]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
         raise CorruptConfigError(
@@ -60,7 +61,7 @@ def _load_json(path: Path) -> dict:
         ) from e
     if not isinstance(data, dict):
         raise CorruptConfigError(f"{path} does not contain a JSON object.")
-    return data
+    return cast(dict[str, Any], data)
 
 
 def import_legacy_json(conn: sqlite3.Connection, path: str | Path) -> ImportReport:
@@ -73,10 +74,11 @@ def import_legacy_json(conn: sqlite3.Connection, path: str | Path) -> ImportRepo
     report = ImportReport()
     data = _load_json(path)
 
-    guilds = data.get("guilds") or {}
-    if not isinstance(guilds, dict):
+    raw_guilds: Any = data.get("guilds") or {}
+    if not isinstance(raw_guilds, dict):
         report.skipped.append("'guilds' is not an object; no guilds imported")
-        guilds = {}
+        raw_guilds = {}
+    guilds = cast("dict[Any, Any]", raw_guilds)
 
     with conn:
         for raw_guild_id, guild_config in guilds.items():
@@ -88,22 +90,24 @@ def import_legacy_json(conn: sqlite3.Connection, path: str | Path) -> ImportRepo
             if not isinstance(guild_config, dict):
                 report.skipped.append(f"guild {guild_id} value is not an object")
                 continue
+            guild = cast("dict[str, Any]", guild_config)
 
             conn.execute("INSERT OR IGNORE INTO guild(guild_id) VALUES (?)", (guild_id,))
             report.guilds += 1
 
             # admin_roles is written by the old code but read nowhere; permissions
             # are enforced by discord's default_permissions. Dropped on purpose.
-            admin_roles = guild_config.get("admin_roles") or []
-            if isinstance(admin_roles, list) and admin_roles:
-                report.admin_roles_discarded += len(admin_roles)
+            raw_admin_roles: Any = guild.get("admin_roles") or []
+            if isinstance(raw_admin_roles, list) and raw_admin_roles:
+                discarded = len(cast("list[Any]", raw_admin_roles))
+                report.admin_roles_discarded += discarded
                 logger.warning(
-                    f"Guild {guild_id}: discarding {len(admin_roles)} admin_roles "
+                    f"Guild {guild_id}: discarding {discarded} admin_roles "
                     f"entries; permissions are enforced by Discord command permissions."
                 )
 
-            report.relays += _import_relays(conn, guild_id, guild_config, report)
-            report.blacklist += _import_blacklist(conn, guild_id, guild_config, report)
+            report.relays += _import_relays(conn, guild_id, guild, report)
+            report.blacklist += _import_blacklist(conn, guild_id, guild, report)
 
         report.emotes = _import_emotes(conn, data, report)
 
@@ -111,21 +115,23 @@ def import_legacy_json(conn: sqlite3.Connection, path: str | Path) -> ImportRepo
     return report
 
 
-def _import_relays(conn, guild_id: int, guild_config: dict, report: ImportReport) -> int:
-    relay_channels = guild_config.get("relay_channels") or {}
-    if not isinstance(relay_channels, dict):
+def _import_relays(
+    conn: sqlite3.Connection, guild_id: int, guild_config: dict[str, Any], report: ImportReport
+) -> int:
+    raw_relays: Any = guild_config.get("relay_channels") or {}
+    if not isinstance(raw_relays, dict):
         report.skipped.append(f"guild {guild_id}: relay_channels is not an object")
         return 0
 
     count = 0
-    for youtube_id, discord_ids in relay_channels.items():
+    for youtube_id, discord_ids in cast("dict[Any, Any]", raw_relays).items():
         if not isinstance(youtube_id, str) or not youtube_id:
             report.skipped.append(f"guild {guild_id}: bad YouTube channel id {youtube_id!r}")
             continue
         if not isinstance(discord_ids, list):
             report.skipped.append(f"guild {guild_id}: targets for {youtube_id} are not a list")
             continue
-        for raw in discord_ids:
+        for raw in cast("list[Any]", discord_ids):
             try:
                 discord_id = int(raw)
             except (TypeError, ValueError):
@@ -142,14 +148,16 @@ def _import_relays(conn, guild_id: int, guild_config: dict, report: ImportReport
     return count
 
 
-def _import_blacklist(conn, guild_id: int, guild_config: dict, report: ImportReport) -> int:
-    blacklist = guild_config.get("tl_blacklist") or []
+def _import_blacklist(
+    conn: sqlite3.Connection, guild_id: int, guild_config: dict[str, Any], report: ImportReport
+) -> int:
+    blacklist: Any = guild_config.get("tl_blacklist") or []
     if not isinstance(blacklist, list):
         report.skipped.append(f"guild {guild_id}: tl_blacklist is not a list")
         return 0
 
     count = 0
-    for user_name in blacklist:
+    for user_name in cast("list[Any]", blacklist):
         if not isinstance(user_name, str) or not user_name:
             report.skipped.append(f"guild {guild_id}: bad blacklist entry {user_name!r}")
             continue
@@ -161,14 +169,14 @@ def _import_blacklist(conn, guild_id: int, guild_config: dict, report: ImportRep
     return count
 
 
-def _import_emotes(conn, data: dict, report: ImportReport) -> int:
-    emotes = data.get("emotes") or {}
+def _import_emotes(conn: sqlite3.Connection, data: dict[str, Any], report: ImportReport) -> int:
+    emotes: Any = data.get("emotes") or {}
     if not isinstance(emotes, dict):
         report.skipped.append("'emotes' is not an object")
         return 0
 
     seen: dict[str, str] = {}
-    for name, emote in emotes.items():
+    for name, emote in cast("dict[Any, Any]", emotes).items():
         if not isinstance(name, str) or not isinstance(emote, str):
             report.skipped.append(f"bad emote entry {name!r}")
             continue

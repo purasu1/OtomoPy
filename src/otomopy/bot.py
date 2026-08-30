@@ -2,6 +2,10 @@
 OtomoPy Discord bot module.
 """
 
+# on_ready is registered by @bot.event, never called by name. The commands package
+# is imported inside main() and imports DiscordBot back under TYPE_CHECKING only.
+# pyright: reportUnusedFunction=false, reportImportCycles=false
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +15,7 @@ import pathlib
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, override
 
 import discord
 from discord import app_commands
@@ -18,6 +23,7 @@ from dotenv import find_dotenv, load_dotenv
 
 from otomopy.config import GuildConfig
 from otomopy.holodex import ChatMessage, HolodexManager, StreamEvent
+from otomopy.translation.base import TranslationProvider
 from otomopy.webhook_manager import WebhookManager
 
 # Set up logging
@@ -73,18 +79,31 @@ class DotEnvConfig:
             load_dotenv(env_file)
             logger.info(f"Loaded environment from {env_file}")
         else:
-            logger.info("No .env file found; using the existing process environment")
-        token = os.getenv("DISCORD_TOKEN")
-        if token is None:
-            raise RuntimeError("No Discord token found. Please add DISCORD_TOKEN to your .env file")
+            logger.warning(
+                f"No .env file found searching upwards from {os.getcwd()}; "
+                f"using the existing process environment"
+            )
 
-        owner_id = os.getenv("OWNER_ID")
-        if owner_id is None:
-            raise RuntimeError("No owner ID found. Please add OWNER_ID to your .env file")
+        def require(name: str) -> str:
+            """Read a required setting, saying where we looked when it is absent."""
+            value = os.getenv(name)
+            if value is not None:
+                return value
+            if env_file is None:
+                raise RuntimeError(
+                    f"{name} is not set, and no .env file was found searching upwards "
+                    f"from {os.getcwd()}. Run the bot from the directory holding your "
+                    f".env, or set OTOMOPY_ENV_FILE to point at it."
+                )
+            raise RuntimeError(f"{name} is not set. Please add it to {env_file}")
+
+        token = require("DISCORD_TOKEN")
+
+        owner_id = require("OWNER_ID")
         try:
             owner_id = int(owner_id)
-        except ValueError:
-            raise ValueError("Invalid owner ID. Please ensure it is an integer.")
+        except ValueError as e:
+            raise ValueError("Invalid owner ID. Please ensure it is an integer.") from e
 
         # State lives in the database. CONFIG_FILE names the deprecated JSON
         # config: when it exists and the database is empty it is imported once
@@ -102,11 +121,7 @@ class DotEnvConfig:
                 "so it will not be imported. Set CONFIG_FILE to migrate it."
             )
 
-        holodex_api_key = os.getenv("HOLODEX_API_KEY")
-        if holodex_api_key is None:
-            raise RuntimeError(
-                "No Holodex API key found. Please add HOLODEX_API_KEY to your .env file"
-            )
+        holodex_api_key = require("HOLODEX_API_KEY")
 
         translation_backend = os.getenv("TRANSLATION_BACKEND", "deepl")
         deepl_api_key = os.getenv("DEEPL_API_KEY")
@@ -133,7 +148,7 @@ class DiscordBot(discord.Client):
 
     def __init__(self, dotenv: DotEnvConfig):
         # Load config
-        self.dotenv = dotenv
+        self.dotenv: DotEnvConfig = dotenv
 
         # Set up minimal intents
         intents = discord.Intents.default()
@@ -142,25 +157,26 @@ class DiscordBot(discord.Client):
         )
 
         super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
-        self.config = GuildConfig(
+        self.tree: app_commands.CommandTree[DiscordBot] = app_commands.CommandTree(self)
+        self.config: GuildConfig = GuildConfig(
             db_file=self.dotenv.db_file, legacy_json_path=self.dotenv.config_file
         )
 
         # Initialize webhook manager
-        self.webhook_manager = WebhookManager()
+        self.webhook_manager: WebhookManager = WebhookManager()
 
         # Keep the channel cache alongside the database
         config_dir = os.path.dirname(self.dotenv.db_file)
         os.environ["OTOMOPY_CONFIG_DIR"] = config_dir
 
         # Holodex integration
-        self.holodex_manager = HolodexManager(dotenv.holodex_api_key, config_dir)
+        self.holodex_manager: HolodexManager = HolodexManager(dotenv.holodex_api_key, config_dir)
         self.tracked_channels: set[str] = set()
-        self.holodex_task = None
+        self.holodex_task: asyncio.Task[None] | None = None
+        self.holodex_chat_messages_received: int = 0
 
         # Translation integration
-        self.translator = None
+        self.translator: TranslationProvider | None = None
         if dotenv.translation_backend == "deepl" and dotenv.deepl_api_key:
             try:
                 from otomopy.translation.base import DeepLProvider
@@ -177,6 +193,7 @@ class DiscordBot(discord.Client):
                 dotenv.azure_translator_endpoint,
             )
 
+    @override
     async def setup_hook(self):
         """Set up the bot and synchronize commands."""
         # This copies the global commands over to your guild.
@@ -185,7 +202,6 @@ class DiscordBot(discord.Client):
         # Start tracking Holodex channels
         await self.update_tracked_channels()
         self.holodex_task = asyncio.create_task(self.start_holodex_tracking())
-        self.holodex_chat_messages_received = 0
 
     async def update_tracked_channels(self):
         """Update the set of YouTube channels being tracked."""
@@ -367,12 +383,12 @@ class DiscordBot(discord.Client):
             # English name is either null or empty, use default name
             author_name = message_author_channel["name"]
 
-        webhook_args = dict(
-            username=author_name,
-            avatar_url=message_author_channel["photo"],
-            allowed_mentions=discord.AllowedMentions.none(),
-            suppress_embeds=True,
-        )
+        webhook_args: dict[str, Any] = {
+            "username": author_name,
+            "avatar_url": message_author_channel["photo"],
+            "allowed_mentions": discord.AllowedMentions.none(),
+            "suppress_embeds": True,
+        }
 
         # Assemble the chat message
         clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
@@ -462,7 +478,7 @@ def main():
         must never be told a change succeeded when it did not. discord.py routes
         every unhandled command and autocomplete exception here.
         """
-        logger.exception("Unhandled command error", exc_info=error)
+        logger.error("Unhandled command error", exc_info=error)
         message = (
             "\u26a0\ufe0f Something went wrong and your change was **not** saved. "
             "The bot owner has been notified."

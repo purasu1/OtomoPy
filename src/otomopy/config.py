@@ -17,6 +17,7 @@ on the event loop.
 """
 
 import logging
+import sqlite3
 from pathlib import Path
 
 from otomopy import db
@@ -36,8 +37,8 @@ class GuildConfig:
             legacy_json_path: Optional path to a pre-SQLite ``config.json`` to
                 import if the database is empty.
         """
-        self.db_file = str(db_file)
-        self._conn = db.connect(db_file)
+        self.db_file: str = str(db_file)
+        self._conn: sqlite3.Connection = db.connect(db_file)
 
         if legacy_json_path and not db.has_data(self._conn):
             import_and_archive(self._conn, legacy_json_path)
@@ -221,11 +222,11 @@ class GuildConfig:
             if discord_channel_id in channels
         }
 
-    def get_all_youtube_channels(self) -> set:
+    def get_all_youtube_channels(self) -> set[str]:
         """Get all YouTube channel IDs that are being relayed across all guilds.
 
         Returns:
-            set: Set of all YouTube channel IDs
+            set[str]: Set of all YouTube channel IDs
         """
         return set(self._relay_by_youtube)
 
@@ -298,14 +299,14 @@ class GuildConfig:
         """
         return user_name in self._blacklist.get(guild_id, ())
 
-    def get_blacklisted_users(self, guild_id: int) -> list:
+    def get_blacklisted_users(self, guild_id: int) -> list[str]:
         """Get all blacklisted users for a guild.
 
         Args:
             guild_id: The Discord guild ID
 
         Returns:
-            list: Sorted list of blacklisted user names
+            list[str]: Sorted list of blacklisted user names
         """
         return sorted(self._blacklist.get(guild_id, ()))
 

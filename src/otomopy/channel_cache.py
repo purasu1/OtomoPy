@@ -4,13 +4,14 @@ Channel cache for Holodex integration.
 This module provides a class to cache YouTube channel data from Holodex.
 """
 
+import contextlib
 import json
 import logging
 import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,18 @@ class ChannelCache:
         """
         if not cache_dir:
             # Use current directory if no cache directory is specified
-            self.cache_dir = Path.cwd()
+            self.cache_dir: Path = Path.cwd()
         else:
             self.cache_dir = Path(cache_dir)
 
         # Create cache directory if it doesn't exist
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        self.cache_file = self.cache_dir / "holodex_channels_cache.json"
+        self.cache_file: Path = self.cache_dir / "holodex_channels_cache.json"
+        self._channels: list[dict[str, Any]] = []
+        self._channel_by_name: dict[str, dict[str, Any]] = {}
+        self._channel_by_id: dict[str, dict[str, Any]] = {}
+        self._channel_by_handle: dict[str, dict[str, Any]] = {}
         self.channels = []
         self.last_update: float = 0
         self.cache_ttl: int = 24 * 60 * 60  # Cache TTL in seconds (24 hours)
@@ -86,16 +91,17 @@ class ChannelCache:
             return False
 
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with open(self.cache_file, encoding="utf-8") as f:
+                raw = json.load(f)
 
             # Check for required fields in cache format
-            if not isinstance(data, dict) or "channels" not in data or "last_update" not in data:
+            if not isinstance(raw, dict) or "channels" not in raw or "last_update" not in raw:
                 logger.warning("Invalid channel cache format")
                 return False
 
-            self.channels = data["channels"]
-            self.last_update = data["last_update"]
+            data = cast(dict[str, Any], raw)
+            self.channels = list(data["channels"])
+            self.last_update = float(data["last_update"])
 
             logger.info(f"Loaded {len(self.channels)} channels from cache")
             return True
@@ -113,7 +119,8 @@ class ChannelCache:
             dir=str(self.cache_dir), prefix=self.cache_file.name + ".", suffix=".tmp"
         )
         try:
-            data = {"channels": self.channels, "last_update": time.time()}
+            saved_at = time.time()
+            data = {"channels": self.channels, "last_update": saved_at}
 
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -121,15 +128,13 @@ class ChannelCache:
                 os.fsync(f.fileno())
             os.replace(tmp_name, self.cache_file)
 
-            self.last_update = data["last_update"]
+            self.last_update = saved_at
             logger.info(f"Saved {len(self.channels)} channels to cache")
             return True
         except Exception:
             logger.exception("Error saving channel cache:")
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
-            except OSError:
-                pass
             return False
 
     def update_cache(self, channels: list[dict[str, Any]]) -> bool:
@@ -209,6 +214,18 @@ class ChannelCache:
         """
         return self._channel_by_name.get(channel_name)
 
+    def cache_channel_by_handle(self, channel_handle: str, channel: dict[str, Any]) -> None:
+        """Remember a channel under a YouTube handle.
+
+        Handles are not part of the Holodex channel list, so the HolodexManager
+        fills this index in as it resolves them.
+
+        Args:
+            channel_handle: The YouTube handle, e.g. ``@example``
+            channel: The channel data to associate with it
+        """
+        self._channel_by_handle[channel_handle] = channel
+
     def get_channel_by_handle(self, channel_handle: str) -> dict[str, Any] | None:
         """Get a specific channel by its handle.
 
@@ -234,7 +251,7 @@ class ChannelCache:
         if not query or len(query) < 2:
             return []
 
-        matches = []
+        matches: list[dict[str, Any]] = []
         for channel in self.channels:
             name = channel.get("name", "").lower()
             english_name = channel.get("english_name", "").lower()

@@ -4,18 +4,24 @@ Relay commands for Holodex integration.
 This module provides commands for managing YouTube channel relays via Holodex.
 """
 
+# Slash-command callbacks are registered by their decorators, never called by name.
+# pyright: reportUnusedFunction=false
+
 import logging
-from typing import List
+from typing import TYPE_CHECKING, Any, override
 
 import discord
 from discord import app_commands
 
 from .autocomplete import channel_autocomplete
 
+if TYPE_CHECKING:  # bot.py imports this package lazily to break the import cycle
+    from otomopy.bot import DiscordBot
+
 logger = logging.getLogger(__name__)
 
 
-def register_commands(bot):
+def register_commands(bot: "DiscordBot") -> None:
     """Register relay commands with the bot.
 
     Args:
@@ -25,14 +31,14 @@ def register_commands(bot):
     async def channel_autocomplete_wrapper(
         interaction: discord.Interaction,
         current: str,
-    ) -> List[app_commands.Choice[str]]:
+    ) -> list[app_commands.Choice[str]]:
         """Wrapper for the shared channel autocomplete function."""
         return await channel_autocomplete(bot, interaction, current)
 
     async def relay_remove_autocomplete_wrapper(
         interaction: discord.Interaction,
         current: str,
-    ) -> List[app_commands.Choice[str]]:
+    ) -> list[app_commands.Choice[str]]:
         """Wrapper for the shared channel autocomplete function (relayed only)."""
         return await channel_autocomplete(bot, interaction, current, filter_relayed_only=True)
 
@@ -194,16 +200,15 @@ def register_commands(bot):
         relay_channels = bot.config.get_relay_channels(interaction.guild.id, interaction.channel.id)
 
         # Reorganize data to match the format expected by create_relay_pages
-        channels_data = {}
+        channels_data: dict[int, list[str]] = {}
         if relay_channels:
-            channels_data[str(interaction.channel.id)] = list(relay_channels.keys())
+            channels_data[interaction.channel.id] = list(relay_channels.keys())
 
         # Get channel name for display
         channel_name = f"<#{interaction.channel.id}>"
 
         # Create paginated embeds using the unified function
         pages = await create_relay_pages(
-            interaction.guild.id,
             channels_data,
             f"📺 Channel Relays - {channel_name}",
             f"YouTube channel relays for {channel_name} ({len(relay_channels)} relays)",
@@ -219,10 +224,10 @@ def register_commands(bot):
     class RelayListView(discord.ui.View):
         """View for paginated relay list display."""
 
-        def __init__(self, pages: List[discord.Embed], timeout: float = 300.0):
+        def __init__(self, pages: list[discord.Embed], timeout: float = 300.0):
             super().__init__(timeout=timeout)
-            self.pages = pages
-            self.current_page = 0
+            self.pages: list[discord.Embed] = pages
+            self.current_page: int = 0
 
             # Disable buttons if only one page
             if len(pages) <= 1:
@@ -231,13 +236,15 @@ def register_commands(bot):
             else:
                 self.previous_page.disabled = True  # Start with previous disabled
 
-        def update_buttons(self):
+        def update_buttons(self) -> None:
             """Update button states based on current page."""
             self.previous_page.disabled = self.current_page == 0
             self.next_page.disabled = self.current_page == len(self.pages) - 1
 
         @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
-        async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def previous_page(
+            self, interaction: discord.Interaction, _button: discord.ui.Button[Any]
+        ):
             if self.current_page > 0:
                 self.current_page -= 1
                 self.update_buttons()
@@ -246,7 +253,9 @@ def register_commands(bot):
                 )
 
         @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
-        async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def next_page(
+            self, interaction: discord.Interaction, _button: discord.ui.Button[Any]
+        ):
             if self.current_page < len(self.pages) - 1:
                 self.current_page += 1
                 self.update_buttons()
@@ -254,18 +263,21 @@ def register_commands(bot):
                     embed=self.pages[self.current_page], view=self
                 )
 
-        async def on_timeout(self):
+        @override
+        async def on_timeout(self) -> None:
             """Disable all buttons when the view times out."""
             for item in self.children:
-                item.disabled = True
+                if isinstance(item, (discord.ui.Button, discord.ui.Select)):
+                    item.disabled = True
 
     async def create_relay_pages(
-        guild_id: int, channels_data: dict, title_prefix: str, description: str
-    ) -> List[discord.Embed]:
+        channels_data: dict[int, list[str]],
+        title_prefix: str,
+        description: str,
+    ) -> list[discord.Embed]:
         """Create paginated embeds for relay data.
 
         Args:
-            guild_id: The guild ID
             channels_data: Dict mapping discord channel IDs to lists of YouTube channel IDs
             title_prefix: Prefix for embed titles
             description: Description for the embeds
@@ -289,10 +301,10 @@ def register_commands(bot):
             )
             return [embed]
 
-        pages = []
+        pages: list[discord.Embed] = []
         channels_per_page = 5
         current_page_channels = 0
-        current_embed = None
+        current_embed: discord.Embed | None = None
 
         for discord_channel_id, youtube_channels in channels_data.items():
             # Create new embed if needed
@@ -309,7 +321,7 @@ def register_commands(bot):
                 current_page_channels = 0
 
             # Format YouTube channels list
-            youtube_channel_lines = []
+            youtube_channel_lines: list[str] = []
             for i, youtube_id in enumerate(
                 youtube_channels[:10], 1
             ):  # Limit to 10 per Discord channel
@@ -372,7 +384,7 @@ def register_commands(bot):
         all_relay_channels = bot.config.get_relay_channels(interaction.guild.id)
 
         # Reorganize data by Discord channel for better display
-        channels_data = {}
+        channels_data: dict[int, list[str]] = {}
         for youtube_id, discord_channel_ids in all_relay_channels.items():
             for discord_channel_id in discord_channel_ids:
                 if discord_channel_id not in channels_data:
@@ -381,7 +393,6 @@ def register_commands(bot):
 
         # Create paginated embeds
         pages = await create_relay_pages(
-            interaction.guild.id,
             channels_data,
             f"🌐 All Server Relays - {interaction.guild.name}",
             (
@@ -407,7 +418,7 @@ def register_commands(bot):
         Args:
             interaction: The Discord interaction
         """
-        logging.info("Listing relays for category")
+        logger.info("Listing relays for category")
         await interaction.response.defer(ephemeral=True)
 
         if not interaction.guild or not isinstance(
@@ -434,14 +445,12 @@ def register_commands(bot):
 
         # Collect all channels or threads with existing relays on the guild
         relay_channels = bot.config.get_relay_channels(interaction.guild.id)
-        channels_data = {}
+        channels_data: dict[int, list[str]] = {}
         for youtube_id, discord_channel_ids in relay_channels.items():
             for discord_channel_id in discord_channel_ids:
                 channel = interaction.guild.get_channel_or_thread(int(discord_channel_id))
                 if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-                    logging.warning(f"Channel {discord_channel_id} is not a text channel or thread")
-                    continue
-                if channel is None:
+                    logger.warning(f"Channel {discord_channel_id} is not a text channel or thread")
                     continue
                 if isinstance(channel, discord.Thread) and channel.parent is not None:
                     channel = channel.parent
@@ -452,12 +461,11 @@ def register_commands(bot):
 
         # Create paginated embeds
         pages = await create_relay_pages(
-            interaction.guild.id,
             channels_data,
             f"📁 Category Relays - {category_name}",
             (
                 f"YouTube channel relays in the '{category_name}' category "
-                f"({len(channels_data)} channels with relays)",
+                f"({len(channels_data)} channels with relays)"
             ),
         )
 
