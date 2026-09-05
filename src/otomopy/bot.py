@@ -494,13 +494,14 @@ def main():
     bot.tree.on_error = on_app_command_error
 
     # Import commands here to avoid circular imports
-    from otomopy.commands import blacklist, emotes, relay, system
+    from otomopy.commands import blacklist, emotes, relay, system, translate
 
     # Register commands with permission checking enforcement
     blacklist.register_commands(bot)
     relay.register_commands(bot)
     system.register_commands(bot)
     emotes.register_commands(bot)
+    translate.register_commands(bot)
 
     # Run the bot
     logger.info("Starting bot...")

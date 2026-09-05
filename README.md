@@ -11,6 +11,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 - **Translation Blacklist**: Filter out specific translators or chat messages
 - **Multi-Server Support**: Configure different settings for each Discord server
 - **Chat Translation**: Automatic translation of VTuber messages via DeepL or Azure AI Translator
+- **On-Demand Translation**: A `/translate` command for translating text between languages
 
 ## Requirements
 
@@ -167,7 +168,7 @@ otomopy
 
 ### Slash Commands
 
-By default, all slash commands require manage messages permissions. This can be adjusted on a per-guild basis in the server integration settings.
+By default, all slash commands except `/translate` require manage messages permissions. This can be adjusted on a per-guild basis in the server integration settings.
 
 #### `/relay add <channel_id>`
 Add a YouTube channel to monitor for the current Discord channel.
@@ -200,6 +201,14 @@ Remove a translator or vtuber from the blacklist for the current guild.
 #### `/blacklist list`
 Show all blacklisted translators or vtubers for the current guild.
 
+#### `/translate <text> [to] [from]`
+Translate text using the configured translation backend, and post the result in
+the current channel. Available to everyone, unless the guild restricts it.
+- `to` defaults to English, `from` is auto-detected when omitted
+- Both auto-complete language names, and also accept a code typed directly
+- Replies with an ephemeral error if no translation backend is configured, or if
+  the backend cannot handle the requested language pair
+
 ## How It Works
 
 1. **Channel Monitoring**: The bot continuously polls the Holodex API for live streams from configured YouTube channels
@@ -218,10 +227,14 @@ OtomoPy/
 │   ├── db.py               # Database connection, schema, and migrations
 │   ├── migrate_json.py     # One-shot import of the legacy config.json
 │   ├── channel_cache.py    # YouTube channel caching
+│   ├── translation/        # Translation backends
+│   │   ├── base.py         # Provider interface, DeepL and Azure backends
+│   │   └── languages.py    # Language codes offered by /translate
 │   └── commands/           # Slash command implementations
 │       ├── relay.py        # Channel relay commands
 │       ├── blacklist.py    # Translator blacklist commands
 │       ├── emotes.py       # Emote configuration commands
+│       ├── translate.py    # On-demand translation command
 │       └── system.py       # System/utility commands
 ├── tests/                  # Test suite
 ├── otomopy.db              # Server configuration (created on first run)
