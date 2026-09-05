@@ -5,6 +5,22 @@ from discord import Webhook
 
 logger = logging.getLogger(__name__)
 
+# Webhooks are named after the channel's immutable ID rather than its name, so that
+# renaming a channel does not orphan its webhook and cause a duplicate to be created.
+WEBHOOK_NAME_PREFIX = "OtomoPy - "
+
+
+def webhook_name(channel: discord.TextChannel | discord.ForumChannel) -> str:
+    """Return the canonical webhook name for a channel.
+
+    Args:
+        channel: Discord channel object
+
+    Returns:
+        Name of the webhook this bot owns in that channel
+    """
+    return f"{WEBHOOK_NAME_PREFIX}{channel.id}"
+
 
 class WebhookManager:
     """Manages Discord webhooks organized by guild and channel."""
@@ -63,18 +79,39 @@ class WebhookManager:
     async def _create_webhook(
         self, channel: discord.TextChannel | discord.ForumChannel
     ) -> Webhook | None:
-        webhook_name = f"OtomoPy - {channel.guild.name} - {channel.name}"
+        """Find this bot's webhook in a channel, creating it if it does not exist yet.
 
-        # Check if there's already a webhook with this name
+        Args:
+            channel: Discord channel object
+
+        Returns:
+            Webhook object owned by this bot in that channel
+        """
+        name = webhook_name(channel)
+
+        # Look for a webhook under the canonical name, falling back to one created under
+        # an older naming scheme (which embedded the guild and channel names).
+        legacy: Webhook | None = None
         for webhook in await channel.webhooks():
-            if webhook.name == webhook_name:
+            if webhook.name == name:
                 logger.info(f"Found existing webhook in channel {channel.id}")
                 return webhook
+            if legacy is None and webhook.name and webhook.name.startswith(WEBHOOK_NAME_PREFIX):
+                legacy = webhook
+
+        if legacy is not None:
+            logger.info(f"Adopting webhook {legacy.name!r} in channel {channel.id} as {name!r}")
+            try:
+                return await legacy.edit(name=name, reason="Key webhook on the channel ID")
+            except discord.HTTPException:
+                # Renaming is only a cleanup; the webhook itself is still usable.
+                logger.exception(f"Failed to rename webhook in channel {channel.id}")
+                return legacy
 
         # Create new webhook if not found
         logger.info(f"Creating new webhook in channel {channel.id}")
         return await channel.create_webhook(
-            name=webhook_name, reason=f"Relay VTuber messages in {channel.name}"
+            name=name, reason=f"Relay VTuber messages in channel {channel.id}"
         )
 
     def _get_webhook(self, channel: discord.TextChannel | discord.ForumChannel) -> Webhook | None:
