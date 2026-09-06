@@ -324,8 +324,14 @@ class DiscordBot(discord.Client):
                     logger.warning(f"Channel {discord_channel_id} is not a text channel or thread")
                     continue
 
-                # Send the message to the Discord channel
-                await channel.send(formatted_message)
+                # Send the message to the Discord channel. Relayed chat is
+                # untrusted text: never let it ping, and never let a URL in it
+                # unfurl into an embed.
+                await channel.send(
+                    formatted_message,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                    suppress_embeds=True,
+                )
             except Exception:
                 logger.exception("Error sending chat message:")
 
@@ -333,24 +339,25 @@ class DiscordBot(discord.Client):
         self,
         message: ChatMessage,
     ) -> str:
-        # Clean up message text by replacing backticks and stripping emote URLs
-        clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
+        # Strip emote URLs, then escape so Discord renders the text as it was
+        # typed. Pings are stopped by allowed_mentions at send time, not here.
+        clean_message = discord.utils.escape_markdown(SCRUB_EMOTES.sub(r":\1:", message.message))
 
-        author_display = f"||{message.author}||"
+        author_display = f"||{discord.utils.escape_markdown(message.author)}||"
         emote = ":speech_balloon:"
 
         # Add chat source link
         video_url = f"https://www.youtube.com/watch?v={message.video_id}"
 
         # Build the message content
-        content_parts = [f"{emote} {author_display}: `{clean_message}`"]
+        content_parts = [f"{emote} {author_display}: {clean_message}"]
 
         message_channel = self.holodex_manager.channel_cache.get_channel_by_id(message.channel_id)
         if message_channel is None:
             logger.warning(f"Channel not found for message {message.channel_id}")
         else:
             video_url = f"https://www.youtube.com/watch?v={message.video_id}"
-            content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
+            content_parts.append(f"-# Chat: [{message_channel['name']}](<{video_url}>)")
 
         # Join all parts with newlines
         return "\n".join(content_parts)
@@ -390,23 +397,24 @@ class DiscordBot(discord.Client):
             "suppress_embeds": True,
         }
 
-        # Assemble the chat message
-        clean_message = SCRUB_EMOTES.sub(r":\1:", message.message.replace("`", "''"))
-        content_parts = [clean_message]
+        # Assemble the chat message. The translator gets the unescaped text --
+        # escaping is only for how Discord renders it.
+        clean_message = SCRUB_EMOTES.sub(r":\1:", message.message)
+        content_parts = [discord.utils.escape_markdown(clean_message)]
 
         message_translation = await self.tl_message(clean_message)
         if message_translation:
             # Use the backend name as a fallback if no specific emote is configured
             backend_name = self.translator.name if self.translator else "Translation"
             icon = self.config.get_emote(backend_name, f"**{backend_name}:**")
-            content_parts.append(f"{icon} `{message_translation}`")
+            content_parts.append(f"{icon} {discord.utils.escape_markdown(message_translation)}")
 
         message_channel = self.holodex_manager.channel_cache.get_channel_by_id(message.channel_id)
         if message_channel is None:
             logger.warning(f"Channel not found for message {message.channel_id}")
         else:
             video_url = f"https://www.youtube.com/watch?v={message.video_id}"
-            content_parts.append(f"**Chat:** [{message_channel['name']}](<{video_url}>)")
+            content_parts.append(f"-# Chat: [{message_channel['name']}](<{video_url}>)")
 
         chat_message = "\n".join(content_parts)
 

@@ -60,9 +60,10 @@ class TestRelayTranslate:
     def test_suppresses_provider_failure(self) -> None:
         assert run(StubProvider(None).translate("こんにちは")) is None
 
-    def test_escapes_backticks_for_discord(self) -> None:
+    def test_returns_the_translation_verbatim(self) -> None:
+        """Escaping for Discord belongs to the caller, not the provider."""
         provider = StubProvider(TranslationResult("a `code` word", "JA"))
-        assert run(provider.translate("コード")) == "a ''code'' word"
+        assert run(provider.translate("コード")) == "a `code` word"
 
     def test_never_pins_the_source_language(self) -> None:
         """Relayed chat is of unknown origin, so detection must stay on."""

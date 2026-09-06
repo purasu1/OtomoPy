@@ -74,7 +74,7 @@ class TranslationProvider(ABC):
         if result.text.lower().strip() == text.lower().strip():
             return None
 
-        return result.text.replace("`", "''")
+        return result.text
 
 
 class DeepLProvider(TranslationProvider):
