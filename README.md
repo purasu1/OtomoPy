@@ -6,7 +6,7 @@ A Discord bot that integrates with the Holodex API to relay VTuber stream notifi
 
 - **Live Stream Monitoring**: Automatically detects when VTubers go live using the Holodex API
 - **Stream Notifications**: Posts notifications in configured Discord channels when streams start
-- **Chat Relay**: Relays live chat messages from YouTube streams to Discord channels
+- **Chat Relay**: Relays chat messages from YouTube streams to Discord channels
 - **Channel Management**: Add/remove YouTube channels to monitor per Discord server
 - **Translation Blacklist**: Filter out specific translators or chat messages
 - **Multi-Server Support**: Configure different settings for each Discord server
@@ -213,7 +213,7 @@ the current channel. Available to everyone, unless the guild restricts it.
 
 1. **Channel Monitoring**: The bot continuously polls the Holodex API for live streams from configured YouTube channels
 2. **Stream Detection**: When a stream starts, the bot posts a notification in the configured Discord channels
-3. **Chat Relay**: For live streams, the bot fetches chat messages and relays them to Discord, filtering out blacklisted translators
+3. **Chat Relay**: For streams, the bot fetches chat messages and relays them to Discord, filtering out blacklisted translators
 4. **Permission Control**: Commands are restricted through Discord's per-guild command permissions, adjustable in the server integration settings
 
 ## Project Structure

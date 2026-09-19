@@ -323,6 +323,11 @@ class HolodexManager:
         self.running: bool = False
         self.update_interval: int = 60  # seconds
         self.sync_offset_seconds: int = 30  # seconds after interval boundary to sync
+        # How long before its scheduled start an upcoming stream is announced.
+        self.announce_lead_time: timedelta = timedelta(hours=1)
+        # Upcoming streams already announced, so each one is announced only once
+        # even though it stays "upcoming" across many polls.
+        self.announced_upcoming: set[str] = set()
         self.api_key: str = api_key
         self.tracked_channels: set[str] = set()  # Set of YouTube channel IDs to track
         self.channel_handles: dict[str, Any] = {}  # Cache of channel info by handle
@@ -710,11 +715,7 @@ class HolodexManager:
         # Also check for any streams we might have missed while disconnected
         if self.stream_callback is not None and self.current_streams is not None:
             for video_id, event in self.current_streams.items():
-                if (
-                    event.status in ["live", "upcoming"]
-                    and not event.members_only
-                    and video_id not in self.active_subscriptions
-                ):
+                if not event.members_only and video_id not in self.active_subscriptions:
                     logger.info(f"Re-subscribing to missed stream: {video_id}")
                     await self._subscribe_to_chat(video_id)
                     await asyncio.sleep(0.1)  # Small delay between subscriptions
@@ -960,30 +961,56 @@ class HolodexManager:
         except Exception:
             logger.exception("Error processing WebSocket message:")
 
-    def _is_stream_more_than_24h_away(self, event: StreamEvent) -> bool:
-        """Check if a stream is more than 24 hours in the future.
+    def _is_within_announce_window(self, event: StreamEvent) -> bool:
+        """Check whether a stream is close enough to its start time to announce.
+
+        A stream whose start time is missing or unparseable counts as inside the
+        window: nothing will later tell us that it has drawn near, so announcing it
+        now beats never announcing it at all.
 
         Args:
             event: StreamEvent to check
 
         Returns:
-            True if stream starts more than 24 hours from now
+            True if the stream starts within announce_lead_time from now
         """
         if not event.start_time:
-            return False
+            return True
 
         try:
             # Parse the ISO format datetime string
             start_time = datetime.fromisoformat(event.start_time.replace("Z", "+00:00"))
-            now = datetime.now(UTC)
-
-            # Check if more than 24 hours away
-            return start_time > now + timedelta(hours=24)
         except (ValueError, AttributeError):
             logger.exception(
                 f"Could not parse start_time '{event.start_time}' for stream {event.video_id}:"
             )
+            return True
+
+        return start_time <= datetime.now(UTC) + self.announce_lead_time
+
+    def _should_announce(self, event: StreamEvent, is_new_or_changed: bool) -> bool:
+        """Decide whether this stream warrants notifying the registered channels.
+
+        An upcoming stream is announced on the first poll where its start time falls
+        inside the announce window, which is usually long after Holodex first lists
+        it -- schedules go up days in advance. Any other status is announced when it
+        is first seen or when the status changes, so a stream going live is always
+        announced even if it was never announced as upcoming.
+
+        Args:
+            event: StreamEvent to check
+            is_new_or_changed: Whether this poll saw the stream appear or change status
+
+        Returns:
+            True if the stream callback should be invoked for this event
+        """
+        if event.status != "upcoming":
+            return is_new_or_changed
+
+        if event.video_id in self.announced_upcoming:
             return False
+
+        return self._is_within_announce_window(event)
 
     async def _update_streams(self, tracked_channels: set[str]):
         """Update the current streams and detect changes.
@@ -1016,37 +1043,41 @@ class HolodexManager:
                 f"{event.status} - {event.video_id}"
             )
 
+        # The first poll only establishes a baseline: every stream it returns was
+        # already in flight before we started, so none of them is news.
+        first_update = self.current_streams is None
+
         # Detect new streams or status changes
         for video_id, event in current_streams.items():
-            # If this is a new stream or the status has changed
-            if (
+            is_new_or_changed = (
                 self.current_streams is None
                 or video_id not in self.current_streams
                 or self.current_streams[video_id].status != event.status
-            ):
+            )
+
+            # Announcing is decided every poll, not just on a change: an upcoming
+            # stream sits unchanged until it drifts into the announce window.
+            should_announce = self._should_announce(event, is_new_or_changed)
+            if should_announce and event.status == "upcoming":
+                # Recorded even on the baseline poll, so a stream already inside the
+                # window at startup is not announced a minute later.
+                self.announced_upcoming.add(video_id)
+
+            if should_announce and not first_update and self.stream_callback is not None:
+                # Call the callback with the event
+                try:
+                    await self.stream_callback(event)
+                except Exception as e:
+                    logger.error(f"Error calling stream callback: {e}")
+
+            if is_new_or_changed:
                 logger.info(
                     f"Stream change detected: {event.channel_name} - {event.title} - {event.status}"
                 )
-                # Don't process streams that are upcoming and more than 24 hours away
-                if (
-                    self.current_streams is not None
-                    and self.stream_callback is not None
-                    and (
-                        event.status != "upcoming" or not self._is_stream_more_than_24h_away(event)
-                    )
-                ):
-                    # Call the callback with the event
-                    try:
-                        await self.stream_callback(event)
-                    except Exception as e:
-                        logger.error(f"Error calling stream callback: {e}")
 
-                # If the stream is live or upcoming and NOT members-only, subscribe to its chat
-                if (
-                    event.status in ["live", "upcoming"]
-                    and not event.members_only
-                    and video_id not in self.active_subscriptions
-                ):
+                # Subscribe to the stream's chat, as long as it isn't members-only
+                # (which we can't access anyway).
+                if not event.members_only and video_id not in self.active_subscriptions:
                     logger.info(f"Subscribing to chat for {event.status} stream: {event.video_id}")
                     # Wait for WebSocket to be connected before subscribing
                     if self.ws_connected:
@@ -1074,6 +1105,9 @@ class HolodexManager:
 
         # Update our stored state
         self.current_streams = current_streams
+        # Forget streams Holodex no longer lists, so this set cannot grow unbounded
+        # over a long-running process.
+        self.announced_upcoming.intersection_update(current_streams)
         logger.debug(
             f"Updated stream state: {len(current_streams)} current streams, "
             f"{len(self.active_subscriptions)} active subscriptions"
